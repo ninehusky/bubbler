@@ -5,3 +5,8 @@ edition = "2024"
 
 [dependencies]
 egglog = "0.5.0"
+sexp = "1.1.4"
+
+[lib]
+name = "bubbler"
+path = "src/lib.rs"
