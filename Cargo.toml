@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 egglog = "0.5.0"
-sexp = "1.1.4"
+symbolic_expressions = "5.0.3"
 
 [lib]
 name = "bubbler"
