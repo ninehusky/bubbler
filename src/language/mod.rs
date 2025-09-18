@@ -39,7 +39,7 @@ pub trait Language: Sized + Clone {
         let mut s = format!("(datatype {}\n", Self::name());
         for (variant, fields) in Self::schema() {
             let fields_str = fields.join(" ");
-            s.push_str(&format!("  ({} {})\n", variant, fields_str));
+            s.push_str(&format!("  ({variant} {fields_str})\n"));
         }
         s.push(')');
         s
@@ -110,9 +110,7 @@ impl Language for BubbleLang {
 
     fn from_sexp(sexp: &Sexp) -> Result<Self, &'static str> {
         match sexp {
-            Sexp::Atom(_) => {
-                return Err("Unexpected atom.");
-            }
+            Sexp::Atom(_) => Err("Unexpected atom."),
             Sexp::List(l) => {
                 if l.is_empty() {
                     return Err("Empty list.");
