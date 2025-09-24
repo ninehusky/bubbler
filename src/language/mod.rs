@@ -1,9 +1,11 @@
 use std::{
+    collections::HashMap,
     fmt::{Debug, Display},
     hash::Hash,
     str::FromStr,
 };
 
+pub mod rule;
 mod sexp;
 
 use sexp::Sexp;
@@ -15,6 +17,7 @@ pub type CVec<L> = Vec<Option<<L as Language>::Constant>>;
 pub type PVec = Vec<bool>;
 
 pub type Constant<L> = <L as Language>::Constant;
+pub type Environment<L> = HashMap<String, Vec<Option<Constant<L>>>>;
 
 pub trait Language: Sized + Clone {
     type Var: Clone + Into<String>;
@@ -44,6 +47,9 @@ pub trait Language: Sized + Clone {
         s.push(')');
         s
     }
+
+    /// Returns the ID if this is a variable, otherwise None.
+    fn is_var(&self) -> Option<String>;
 }
 
 /// A simple Bubbler language.
@@ -172,6 +178,13 @@ impl Language for BubbleLang {
                 left.to_sexp(),
                 right.to_sexp(),
             ]),
+        }
+    }
+
+    fn is_var(&self) -> Option<String> {
+        match self {
+            BubbleLang::Var(v) => Some(v.clone()),
+            _ => None,
         }
     }
 }
