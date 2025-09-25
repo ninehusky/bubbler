@@ -107,7 +107,11 @@ impl<L: Language> Bubbler<L> {
             (set (get-cvec {sexp}) (HashCode "{hash}"))
         "#
         );
-        Ok(run_prog!(self.egraph, &egglog_prog)?)
+        let results = run_prog!(self.egraph, &egglog_prog)?;
+        Ok(results
+            .into_iter()
+            .map(|output| output.to_string())
+            .collect())
     }
 
     /// Returns the characteristic vector for a given term, if it exists.
@@ -131,6 +135,8 @@ impl<L: Language> Bubbler<L> {
                     // Result: ["(HashCode \"1284188636790806460\")"]
                     // now, grab the hashcode as a u64 and look it up in the cache.
                     let hash_code: u64 = res[0]
+                        .to_string()
+                        .trim()
                         .trim_start_matches("(HashCode \"")
                         .trim_end_matches("\")")
                         .parse()
