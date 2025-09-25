@@ -240,7 +240,7 @@ impl Language for BubbleLang {
 }
 
 pub fn say_hi() {
-    println!("I am a Bubbler! 🐳");
+    println!("Ahoy-I am a Bubbler! 🐳");
 }
 
 /// Helper function to cross product a list of values `ts` across `n` variables.
