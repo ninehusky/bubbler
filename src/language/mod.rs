@@ -17,7 +17,9 @@ pub type CVec<L> = Vec<Option<<L as Language>::Constant>>;
 pub type PVec = Vec<bool>;
 
 pub type Constant<L> = <L as Language>::Constant;
-pub type Environment<L> = HashMap<String, Vec<Option<Constant<L>>>>;
+
+/// An environment mapping variable names to a set of constants.
+pub type Environment<L> = HashMap<String, Vec<Constant<L>>>;
 
 pub trait Language: Sized + Clone {
     type Var: Clone + Into<String>;
@@ -38,6 +40,8 @@ pub trait Language: Sized + Clone {
 
     fn schema() -> Vec<(&'static str, Vec<&'static str>)>;
 
+    fn make_environment(vars: &[String]) -> Environment<Self>;
+
     fn to_egglog_src() -> String {
         let mut s = format!("(datatype {}\n", Self::name());
         for (variant, fields) in Self::schema() {
@@ -47,6 +51,8 @@ pub trait Language: Sized + Clone {
         s.push(')');
         s
     }
+
+    fn evaluate(&self, env: &Environment<Self>) -> CVec<Self>;
 
     /// Returns the ID if this is a variable, otherwise None.
     fn is_var(&self) -> Option<String>;
@@ -187,8 +193,71 @@ impl Language for BubbleLang {
             _ => None,
         }
     }
+
+    fn make_environment(vars: &[String]) -> Environment<Self> {
+        let consts: Vec<i64> = vec![-10, -1, 0, 1, 2, 5, 100];
+
+        let cvecs = self_product(&consts, vars.len());
+
+        let mut env = HashMap::new();
+        for (i, v) in vars.iter().enumerate() {
+            env.insert(v.clone(), cvecs[i].clone());
+        }
+
+        env
+    }
+
+    fn evaluate(&self, env: &Environment<Self>) -> CVec<Self> {
+        match self {
+            BubbleLang::Int(n) => vec![Some(*n); env.values().next().map_or(1, |v| v.len())],
+            BubbleLang::Var(v) => env.get(v).cloned().unwrap().into_iter().map(Some).collect(),
+            BubbleLang::Add(left, right) => {
+                let left_cvec = left.evaluate(env);
+                let right_cvec = right.evaluate(env);
+                left_cvec
+                    .iter()
+                    .zip(right_cvec.iter())
+                    .map(|(l, r)| match (l, r) {
+                        (Some(lv), Some(rv)) => Some(lv + rv),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            BubbleLang::Lt(left, right) => {
+                let left_cvec = left.evaluate(env);
+                let right_cvec = right.evaluate(env);
+                left_cvec
+                    .iter()
+                    .zip(right_cvec.iter())
+                    .map(|(l, r)| match (l, r) {
+                        (Some(lv), Some(rv)) => Some(if lv < rv { 1 } else { 0 }),
+                        _ => None,
+                    })
+                    .collect()
+            }
+        }
+    }
 }
 
 pub fn say_hi() {
     println!("I am a Bubbler! 🐳");
+}
+
+/// Helper function to cross product a list of values `ts` across `n` variables.
+pub fn self_product<T: Clone>(ts: &[T], n: usize) -> Vec<Vec<T>> {
+    let num_consts = ts.len();
+    let num_rows = num_consts.pow(n as u32);
+    let mut res = vec![];
+    for i in 0..n {
+        let mut entry = vec![];
+        while entry.len() < num_rows {
+            for c in ts {
+                for _ in 0..num_consts.pow(i as u32) {
+                    entry.push(c.clone());
+                }
+            }
+        }
+        res.push(entry);
+    }
+    res
 }
