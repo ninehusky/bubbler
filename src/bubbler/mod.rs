@@ -132,8 +132,6 @@ impl<L: Language> Bubbler<L> {
                 } else {
                     assert_eq!(res.len(), 1, "Termlookup returned multiple cvec results.");
                     println!("Result: {res:?}");
-                    // Result: ["(HashCode \"1284188636790806460\")"]
-                    // now, grab the hashcode as a u64 and look it up in the cache.
                     let hash_code: u64 = res[0]
                         .to_string()
                         .trim()
@@ -144,7 +142,10 @@ impl<L: Language> Bubbler<L> {
 
                     // I think it's okay to panic here. If the cvec is in the egraph but
                     // not in the cache, something has gone very wrong.
-                    Ok(self.cache.get(&hash_code).cloned().unwrap())
+                    match self.cache.get(&hash_code) {
+                        None => panic!("CVec not found in cache for hash code {hash_code}."),
+                        Some(code) => Ok(code.clone()),
+                    }
                 }
             }
             Err(_) => Err("Failed to run egglog program."),
