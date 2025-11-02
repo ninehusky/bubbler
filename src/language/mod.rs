@@ -5,8 +5,9 @@ use std::{
     str::FromStr,
 };
 
+pub mod implication;
 pub mod rule;
-mod sexp;
+pub(crate) mod sexp;
 
 use sexp::Sexp;
 
@@ -21,7 +22,7 @@ pub type Constant<L> = <L as Language>::Constant;
 /// An environment mapping variable names to a set of constants.
 pub type Environment<L> = HashMap<String, Vec<Constant<L>>>;
 
-pub trait Language: Sized + Clone {
+pub trait Language: Sized + Clone + Debug {
     type Var: Clone + Into<String>;
     type Constant: Clone + Hash + Eq + Debug + Display + Ord;
 
@@ -173,7 +174,10 @@ impl Language for BubbleLang {
             BubbleLang::Int(n) => {
                 Sexp::List(vec![Sexp::Atom("Int".into()), Sexp::Atom(n.to_string())])
             }
-            BubbleLang::Var(v) => Sexp::List(vec![Sexp::Atom("Var".into()), Sexp::Atom(v.clone())]),
+            BubbleLang::Var(v) => Sexp::List(vec![
+                Sexp::Atom("Var".into()),
+                Sexp::Atom(format!("\"{v}\"")),
+            ]),
             BubbleLang::Add(left, right) => Sexp::List(vec![
                 Sexp::Atom("Add".into()),
                 left.to_sexp(),

@@ -1,10 +1,23 @@
+use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 use egglog::EGraph;
 
-use crate::language::rule::{Implication, Rewrite};
+use egglog::ast::Rule;
+
+use crate::language::implication::Implication;
+use crate::language::rule::Rewrite;
 use crate::language::{CVec, Environment, Language};
 
+pub(crate) const GET_CVEC_FN: &str = "get-cvec";
+
+/// If SMT says that p, q are not equal, then it is
+/// the case that if p' == p, q' == q, then p' and q' are also not equal.
+pub(crate) const NOT_EQUAL_FN: &str = "not-equal";
+
+pub(crate) const HASH_CODE_FN: &str = "HashCode";
+
+#[macro_export]
 macro_rules! run_prog {
     ($egraph:expr, $prog:expr) => {{
         println!("Running egglog program:\n{}", $prog);
@@ -16,6 +29,16 @@ pub struct BubblerConfig<L: Language> {
     pub vars: Vec<String>,
     pub vals: Vec<L::Constant>,
     _marker: std::marker::PhantomData<L>,
+}
+
+impl<L: Language> BubblerConfig<L> {
+    pub fn new(vars: Vec<String>, vals: Vec<L::Constant>) -> Self {
+        Self {
+            vars,
+            vals,
+            _marker: std::marker::PhantomData,
+        }
+    }
 }
 
 pub enum BubblerStep {
@@ -37,7 +60,32 @@ impl Default for BubblerSchedule {
     }
 }
 
-pub type CVecCache<L> = std::collections::HashMap<u64, CVec<L>>;
+pub struct CVecCache<L: Language>(pub HashMap<u64, CVec<L>>);
+
+impl<L: Language> CVecCache<L> {
+    pub fn lookup_from_str(&self, s: &str) -> Option<&CVec<L>> {
+        let hash_code: u64 = s
+            .trim()
+            .trim_start_matches(format!("({} \"", HASH_CODE_FN).as_str())
+            .trim_end_matches("\")")
+            .parse()
+            .ok()?;
+
+        self.get(&hash_code)
+    }
+
+    pub fn new() -> Self {
+        Self(HashMap::new())
+    }
+
+    pub fn insert(&mut self, hash: u64, cvec: CVec<L>) {
+        self.0.insert(hash, cvec);
+    }
+
+    pub fn get(&self, hash: &u64) -> Option<&CVec<L>> {
+        self.0.get(hash)
+    }
+}
 
 /// The Bubbler struct, which manages a core Bubbler e-graph.
 pub struct Bubbler<L: Language> {
@@ -78,11 +126,15 @@ impl<L: Language> Bubbler<L> {
             self.egraph,
             format!(
                 r#"
-            (datatype cvec (HashCode String))
+            (datatype cvec ({HASH_CODE_FN} String))
 
             ;;; A relation that associates terms with their characteristic vectors.
             ;;; If two things are merged, then their cvecs must be the same.
-            (function get-cvec ({name}) cvec :no-merge)
+            (function {GET_CVEC_FN} ({name}) cvec :no-merge)
+
+            ;;; If Bubbler discovers that two terms are not equal (through
+            ;;; validation), then we record that information here.
+            (relation {NOT_EQUAL_FN} ({name} {name} {name}))
             "#
             )
             .as_str()
@@ -91,7 +143,7 @@ impl<L: Language> Bubbler<L> {
     }
 
     /// Adds the term to the e-graph, erroring if the term is malformed.
-    pub fn add_term(&mut self, term: &L) -> Result<Vec<String>, egglog::Error> {
+    pub fn add_term(&mut self, term: &L) -> Result<CVec<L>, egglog::Error> {
         let sexp = term.to_sexp();
         let cvec = term.evaluate(&self.environment);
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -99,19 +151,22 @@ impl<L: Language> Bubbler<L> {
         let hash = hasher.finish();
 
         // Cache the cvec.
-        self.cache.insert(hash, cvec);
+        if let Some(prev) = self.cache.get(&hash) {
+            assert_eq!(
+                prev, &cvec,
+                "Hash collision detected for cvecs: {prev:?} and {cvec:?}"
+            );
+        }
+        self.cache.insert(hash, cvec.clone());
 
         let egglog_prog = format!(
             r#"
             {sexp}
-            (set (get-cvec {sexp}) (HashCode "{hash}"))
+            (set ({GET_CVEC_FN} {sexp}) ({HASH_CODE_FN} "{hash}"))
         "#
         );
-        let results = run_prog!(self.egraph, &egglog_prog)?;
-        Ok(results
-            .into_iter()
-            .map(|output| output.to_string())
-            .collect())
+        run_prog!(self.egraph, &egglog_prog)?;
+        Ok(cvec)
     }
 
     /// Returns the characteristic vector for a given term, if it exists.
@@ -120,7 +175,7 @@ impl<L: Language> Bubbler<L> {
         let sexp = term.to_sexp();
         let egglog_prog = format!(
             r#"
-            (extract (get-cvec {sexp}))
+            (extract ({GET_CVEC_FN} {sexp}))
         "#
         );
         let result = self.egraph.parse_and_run_program(None, &egglog_prog);
@@ -131,11 +186,10 @@ impl<L: Language> Bubbler<L> {
                     Err("Term not found in e-graph.")
                 } else {
                     assert_eq!(res.len(), 1, "Termlookup returned multiple cvec results.");
-                    println!("Result: {res:?}");
                     let hash_code: u64 = res[0]
                         .to_string()
                         .trim()
-                        .trim_start_matches("(HashCode \"")
+                        .trim_start_matches(format!("({} \"", HASH_CODE_FN).as_str())
                         .trim_end_matches("\")")
                         .parse()
                         .unwrap();
