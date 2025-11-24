@@ -29,7 +29,7 @@ pub enum Term<L: Language> {
     Node(L::Op, Vec<Term<L>>),
 }
 
-trait OpTrait {
+pub trait OpTrait {
     fn arity(&self) -> usize;
 
     fn name(&self) -> &'static str;
@@ -37,18 +37,52 @@ trait OpTrait {
 
 pub trait Language: Clone + Debug {
     type Constant: Clone + Debug + PartialEq + Eq + Hash + Display + FromStr;
-    type Op: Clone + Debug + PartialEq + Eq + Hash + OpTrait + FromStr;
+    type Op: Clone + Debug + Display + PartialEq + Eq + Hash + OpTrait + FromStr;
+
+    fn name() -> &'static str;
 
     fn interesting_constants() -> Vec<Self::Constant>;
 
     fn make_environment(vars: &[String]) -> Environment<Self> {
-        let vals = Self::interesting_constants();
+        let vals: Vec<Self::Constant> = Self::interesting_constants().into_iter().collect();
+
         let mut env: Environment<Self> = HashMap::new();
         let cross_product = self_product(&vals, vars.len());
+
         for (i, var) in vars.iter().enumerate() {
+            // Debug print
+            println!("Assigning {} to {:?}", var, cross_product[i]);
             env.insert(var.clone(), cross_product[i].clone());
         }
+
         env
+    }
+
+    /// List all operators in this language.
+    fn ops() -> Vec<Self::Op>;
+
+    /// Default Egglog source generation
+    fn to_egglog_src() -> String {
+        let mut s = format!("(datatype {}\n", Self::name());
+        // Add Var and Const constructors
+        s.push_str(format!("    (Const {})\n", std::any::type_name::<Self::Constant>()).as_str());
+        s.push_str("    (Var String)\n");
+        for op in Self::ops() {
+            assert!(
+                op.to_string() != "Var" && op.to_string() != "Const",
+                "Operators cannot be named 'Var' or 'Const'."
+            );
+            let mut op_str = format!("    ({}", op.name());
+            for i in 0..op.arity() {
+                op_str.push(' ');
+                op_str.push_str(Self::name());
+            }
+            op_str.push(')');
+            s.push_str(&op_str);
+            s.push('\n');
+        }
+        s.push(')');
+        s
     }
 
     fn evaluate_op(op: &Self::Op, child_vecs: &[CVec<Self>]) -> CVec<Self>;
@@ -94,8 +128,14 @@ impl<L: Language> Term<L> {
     pub fn to_sexp(&self) -> Sexp {
         match self {
             Term::Hole(name) => Sexp::Atom(name.clone()),
-            Term::Var(name) => Sexp::Atom(name.clone()),
-            Term::Const(c) => Sexp::Atom(format!("{}", c)),
+            Term::Var(name) => Sexp::List(vec![
+                Sexp::Atom("Var".to_string()),
+                Sexp::Atom(name.clone()),
+            ]),
+            Term::Const(c) => Sexp::List(vec![
+                Sexp::Atom("Const".to_string()),
+                Sexp::Atom(format!("{}", c)),
+            ]),
             Term::Node(op, children) => {
                 let mut list = vec![Sexp::Atom(format!("{}", op.name()))];
                 for child in children {
@@ -208,6 +248,15 @@ pub enum BubbleLangOp {
     Add,
 }
 
+impl Display for BubbleLangOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BubbleLangOp::Neg => write!(f, "Neg"),
+            BubbleLangOp::Add => write!(f, "Add"),
+        }
+    }
+}
+
 impl FromStr for BubbleLangOp {
     type Err = String;
 
@@ -227,8 +276,16 @@ impl Language for BubbleLang {
     type Constant = i64;
     type Op = BubbleLangOp;
 
+    fn name() -> &'static str {
+        "BubbleLang"
+    }
+
+    fn ops() -> Vec<BubbleLangOp> {
+        vec![BubbleLangOp::Neg, BubbleLangOp::Add]
+    }
+
     fn interesting_constants() -> Vec<Self::Constant> {
-        vec![-1, 0, 1, 2, 5, 100]
+        vec![-10, -1, 0, 1, 2, 5, 100]
     }
 
     fn evaluate_op(op: &Self::Op, child_vecs: &[CVec<Self>]) -> CVec<Self> {

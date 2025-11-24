@@ -120,27 +120,26 @@ impl<L: Language> Bubbler<L> {
     /// - The datatype definition for L.
     /// - The datatype definition for cvecs.
     fn initialize_egraph(&mut self) {
-        todo!()
-        // run_prog!(self.egraph, &L::to_egglog_src()).unwrap();
-        // let name = L::name();
-        // run_prog!(
-        //     self.egraph,
-        //     format!(
-        //         r#"
-        //     (datatype cvec ({HASH_CODE_FN} String))
+        run_prog!(self.egraph, &L::to_egglog_src()).unwrap();
+        let name = L::name();
+        run_prog!(
+            self.egraph,
+            format!(
+                r#"
+            (datatype cvec ({HASH_CODE_FN} String))
 
-        //     ;;; A relation that associates terms with their characteristic vectors.
-        //     ;;; If two things are merged, then their cvecs must be the same.
-        //     (function {GET_CVEC_FN} ({name}) cvec :no-merge)
+            ;;; A relation that associates terms with their characteristic vectors.
+            ;;; If two things are merged, then their cvecs must be the same.
+            (function {GET_CVEC_FN} ({name}) cvec :no-merge)
 
-        //     ;;; If Bubbler discovers that two terms are not equal (through
-        //     ;;; validation), then we record that information here.
-        //     (relation {NOT_EQUAL_FN} ({name} {name} {name}))
-        //     "#
-        //     )
-        //     .as_str()
-        // )
-        // .unwrap();
+            ;;; If Bubbler discovers that two terms are not equal (through
+            ;;; validation), then we record that information here.
+            (relation {NOT_EQUAL_FN} ({name} {name} {name}))
+            "#
+            )
+            .as_str()
+        )
+        .unwrap();
     }
 
     /// Adds the term to the e-graph, erroring if the term is malformed.
@@ -162,7 +161,6 @@ impl<L: Language> Bubbler<L> {
 
         let egglog_prog = format!(
             r#"
-            {sexp}
             (set ({GET_CVEC_FN} {sexp}) ({HASH_CODE_FN} "{hash}"))
         "#
         );
@@ -222,20 +220,20 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn bubbler_egraph_ok() {
-    //     use super::Bubbler;
-    //     use crate::language::BubbleLang;
+    #[test]
+    fn bubbler_egraph_ok() {
+        use super::Bubbler;
+        use crate::language::BubbleLang;
 
-    //     let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
-    //     bubbler.add_term(&BubbleLang::Const(42)).unwrap();
-    //     let cvec = bubbler.lookup_cvec(&BubbleLang::Int(42)).unwrap();
-    //     for v in &cvec {
-    //         assert_eq!(*v, Some(42_i64));
-    //     }
-    //     // `BubbleLang::make_environment(&["x".into(), "y".into()])`
-    //     // produces 7 * 7 = 49 entries, which is the size of the
-    //     // cartesian product of the constant values for x and y.
-    //     assert_eq!(cvec.len(), 7 * 7);
-    // }
+        let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
+        bubbler.add_term(&Term::Const(42)).unwrap();
+        let cvec = bubbler.lookup_cvec(&Term::Const(42)).unwrap();
+        for v in &cvec {
+            assert_eq!(*v, Some(42_i64));
+        }
+        // `BubbleLang::make_environment(&["x".into(), "y".into()])`
+        // produces 7 * 7 = 49 entries, which is the size of the
+        // cartesian product of the constant values for x and y.
+        assert_eq!(cvec.len(), 7 * 7);
+    }
 }
