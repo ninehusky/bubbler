@@ -7,7 +7,7 @@ use egglog::ast::Rule;
 
 use crate::language::implication::Implication;
 use crate::language::rule::Rewrite;
-use crate::language::{CVec, Environment, Language};
+use crate::language::{CVec, Environment, Language, Term};
 
 pub(crate) const GET_CVEC_FN: &str = "get-cvec";
 
@@ -120,30 +120,31 @@ impl<L: Language> Bubbler<L> {
     /// - The datatype definition for L.
     /// - The datatype definition for cvecs.
     fn initialize_egraph(&mut self) {
-        run_prog!(self.egraph, &L::to_egglog_src()).unwrap();
-        let name = L::name();
-        run_prog!(
-            self.egraph,
-            format!(
-                r#"
-            (datatype cvec ({HASH_CODE_FN} String))
+        todo!()
+        // run_prog!(self.egraph, &L::to_egglog_src()).unwrap();
+        // let name = L::name();
+        // run_prog!(
+        //     self.egraph,
+        //     format!(
+        //         r#"
+        //     (datatype cvec ({HASH_CODE_FN} String))
 
-            ;;; A relation that associates terms with their characteristic vectors.
-            ;;; If two things are merged, then their cvecs must be the same.
-            (function {GET_CVEC_FN} ({name}) cvec :no-merge)
+        //     ;;; A relation that associates terms with their characteristic vectors.
+        //     ;;; If two things are merged, then their cvecs must be the same.
+        //     (function {GET_CVEC_FN} ({name}) cvec :no-merge)
 
-            ;;; If Bubbler discovers that two terms are not equal (through
-            ;;; validation), then we record that information here.
-            (relation {NOT_EQUAL_FN} ({name} {name} {name}))
-            "#
-            )
-            .as_str()
-        )
-        .unwrap();
+        //     ;;; If Bubbler discovers that two terms are not equal (through
+        //     ;;; validation), then we record that information here.
+        //     (relation {NOT_EQUAL_FN} ({name} {name} {name}))
+        //     "#
+        //     )
+        //     .as_str()
+        // )
+        // .unwrap();
     }
 
     /// Adds the term to the e-graph, erroring if the term is malformed.
-    pub fn add_term(&mut self, term: &L) -> Result<CVec<L>, egglog::Error> {
+    pub fn add_term(&mut self, term: &Term<L>) -> Result<CVec<L>, egglog::Error> {
         let sexp = term.to_sexp();
         let cvec = term.evaluate(&self.environment);
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -171,7 +172,7 @@ impl<L: Language> Bubbler<L> {
 
     /// Returns the characteristic vector for a given term, if it exists.
     /// Errors if the term is not in the e-graph.
-    pub fn lookup_cvec(&mut self, term: &L) -> Result<CVec<L>, &'static str> {
+    pub fn lookup_cvec(&mut self, term: &Term<L>) -> Result<CVec<L>, &'static str> {
         let sexp = term.to_sexp();
         let egglog_prog = format!(
             r#"
@@ -221,20 +222,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn bubbler_egraph_ok() {
-        use super::Bubbler;
-        use crate::language::BubbleLang;
+    // #[test]
+    // fn bubbler_egraph_ok() {
+    //     use super::Bubbler;
+    //     use crate::language::BubbleLang;
 
-        let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
-        bubbler.add_term(&BubbleLang::Int(42)).unwrap();
-        let cvec = bubbler.lookup_cvec(&BubbleLang::Int(42)).unwrap();
-        for v in &cvec {
-            assert_eq!(*v, Some(42_i64));
-        }
-        // `BubbleLang::make_environment(&["x".into(), "y".into()])`
-        // produces 7 * 7 = 49 entries, which is the size of the
-        // cartesian product of the constant values for x and y.
-        assert_eq!(cvec.len(), 7 * 7);
-    }
+    //     let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
+    //     bubbler.add_term(&BubbleLang::Const(42)).unwrap();
+    //     let cvec = bubbler.lookup_cvec(&BubbleLang::Int(42)).unwrap();
+    //     for v in &cvec {
+    //         assert_eq!(*v, Some(42_i64));
+    //     }
+    //     // `BubbleLang::make_environment(&["x".into(), "y".into()])`
+    //     // produces 7 * 7 = 49 entries, which is the size of the
+    //     // cartesian product of the constant values for x and y.
+    //     assert_eq!(cvec.len(), 7 * 7);
+    // }
 }

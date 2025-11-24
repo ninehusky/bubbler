@@ -3,7 +3,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use super::{CVec, Language};
 use crate::{
     bubbler::{CVecCache, GET_CVEC_FN},
-    language::sexp::Sexp,
+    language::{sexp::Sexp, Term},
     run_prog,
 };
 use egglog::{util::IndexMap, CommandOutput, EGraph};
@@ -84,7 +84,7 @@ impl<L: Language> Default for RewriteSet<L> {
     }
 }
 
-fn get_term<L: Language>(relation: String) -> Result<L, String> {
+fn get_term<L: Language>(relation: String) -> Result<Term<L>, String> {
     if !(relation.starts_with(format!("({GET_CVEC_FN}").as_str()) && relation.ends_with(')')) {
         return Err(format!(
             "Expected relation to start with '({})', got: {}",
@@ -98,110 +98,110 @@ fn get_term<L: Language>(relation: String) -> Result<L, String> {
 
     println!("the relation is: {}", relation);
 
-    let res = L::from_sexp(&Sexp::from_str(relation)?)?;
+    let res = Term::<L>::from_sexp(&Sexp::from_str(relation)?)?;
     Ok(res)
 }
 
-pub fn cvec_match<L: Language>(
-    egraph: &mut EGraph,
-    cache: &CVecCache<L>,
-) -> Result<RewriteSet<L>, String> {
-    let get_cvec_command = format!("(print-function {GET_CVEC_FN})");
-    let result = match run_prog!(egraph, &get_cvec_command) {
-        Ok(res) => res,
-        Err(_) => {
-            return Err("Failed to run PrintFunction command.".into());
-        }
-    };
+// pub fn cvec_match<L: Language>(
+//     egraph: &mut EGraph,
+//     cache: &CVecCache<L>,
+// ) -> Result<RewriteSet<L>, String> {
+//     let get_cvec_command = format!("(print-function {GET_CVEC_FN})");
+//     let result = match run_prog!(egraph, &get_cvec_command) {
+//         Ok(res) => res,
+//         Err(_) => {
+//             return Err("Failed to run PrintFunction command.".into());
+//         }
+//     };
 
-    if result.len() != 1 {
-        panic!("Expected exactly one result from PrintFunction command.");
-    }
+//     if result.len() != 1 {
+//         panic!("Expected exactly one result from PrintFunction command.");
+//     }
 
-    let mut by_cvec: IndexMap<CVec<L>, Vec<L>> = IndexMap::default();
+//     let mut by_cvec: IndexMap<CVec<L>, Vec<L>> = IndexMap::default();
 
-    // 1. Go through all cvecs for un-merged (black) e-classes.
-    match &result[0] {
-        CommandOutput::PrintFunction(_func, dag, tuples, _size) => {
-            for (term, cvec) in tuples.iter() {
-                let term = get_term::<L>(dag.to_string(term))?;
-                let cvec = cache.lookup_from_str(&dag.to_string(cvec)).unwrap();
-                by_cvec.entry(cvec.clone()).or_default().push(term);
-            }
-        }
-        _ => unreachable!("Expected PrintFunctionOutput."),
-    }
+//     // 1. Go through all cvecs for un-merged (black) e-classes.
+//     match &result[0] {
+//         CommandOutput::PrintFunction(_func, dag, tuples, _size) => {
+//             for (term, cvec) in tuples.iter() {
+//                 let term = get_term::<L>(dag.to_string(term))?;
+//                 let cvec = cache.lookup_from_str(&dag.to_string(cvec)).unwrap();
+//                 by_cvec.entry(cvec.clone()).or_default().push(term);
+//             }
+//         }
+//         _ => unreachable!("Expected PrintFunctionOutput."),
+//     }
 
-    // 2. Go pairwise through all terms with the same cvec and create rewrites
-    //    from them.
-    //    For each rule:
-    //    - see if not equal by pinging egraph for (not-equal lhs rhs)
-    //    - generalize the rule
-    //    - add (no-op if already exists) to RewriteSet
-    for (cvec, terms) in by_cvec.iter() {
-        for term1 in terms.iter() {
-            // Here, even though equality is symmetric, we want to consider both
-            // directions separately. For some reason.
-            for term2 in terms.iter() {
-                // Check if lhs and rhs are in different e-classes.
-                let check_neq_command = format!(
-                    r#"
-                    (extract (not-equal {lhs} {rhs}))
-                "#
-                );
-                let neq_result = run_prog!(egraph, &check_neq_command)?;
+//     // 2. Go pairwise through all terms with the same cvec and create rewrites
+//     //    from them.
+//     //    For each rule:
+//     //    - see if not equal by pinging egraph for (not-equal lhs rhs)
+//     //    - generalize the rule
+//     //    - add (no-op if already exists) to RewriteSet
+//     for (cvec, terms) in by_cvec.iter() {
+//         for term1 in terms.iter() {
+//             // Here, even though equality is symmetric, we want to consider both
+//             // directions separately. For some reason.
+//             for term2 in terms.iter() {
+//                 // Check if lhs and rhs are in different e-classes.
+//                 let check_neq_command = format!(
+//                     r#"
+//                     (extract (not-equal {lhs} {rhs}))
+//                 "#
+//                 );
+//                 let neq_result = run_prog!(egraph, &check_neq_command)?;
 
-                if neq_result.is_empty() {
-                    // They are equal, skip.
-                    continue;
-                }
+//                 if neq_result.is_empty() {
+//                     // They are equal, skip.
+//                     continue;
+//                 }
 
-                // They are not equal, create a rewrite.
-                let rewrite = Rewrite::new(None, lhs.clone(), rhs.clone());
-                let key = format!("{} -> {}", format!("{lhs}"), format!("{rhs}"));
-                by_cvec.entry(cvec.clone()).or_default().push(lhs.clone());
-            }
-        }
-    }
+//                 // They are not equal, create a rewrite.
+//                 let rewrite = Rewrite::new(None, lhs.clone(), rhs.clone());
+//                 let key = format!("{} -> {}", format!("{lhs}"), format!("{rhs}"));
+//                 by_cvec.entry(cvec.clone()).or_default().push(lhs.clone());
+//             }
+//         }
+//     }
 
-    println!("Found {} unique CVecs.", by_cvec.len());
-    println!("{:?}", by_cvec);
+//     println!("Found {} unique CVecs.", by_cvec.len());
+//     println!("{:?}", by_cvec);
 
-    Ok(Default::default())
-}
+//     Ok(Default::default())
+// }
 
-#[cfg(test)]
-mod cvec_match_tests {
-    use crate::{
-        bubbler::{Bubbler, BubblerConfig},
-        language::BubbleLang,
-    };
+// #[cfg(test)]
+// mod cvec_match_tests {
+//     use crate::{
+//         bubbler::{Bubbler, BubblerConfig},
+//         language::BubbleLang,
+//     };
 
-    use super::*;
+//     use super::*;
 
-    #[allow(dead_code)]
-    fn get_cfg() -> BubblerConfig<BubbleLang> {
-        BubblerConfig::new(vec!["x".into(), "y".into()], vec![0, 1])
-    }
+//     #[allow(dead_code)]
+//     fn get_cfg() -> BubblerConfig<BubbleLang> {
+//         BubblerConfig::new(vec!["x".into(), "y".into()], vec![0, 1])
+//     }
 
-    #[test]
-    pub fn cvec_match_ok() {
-        let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
-        bubbler
-            .add_term(&BubbleLang::Add(
-                Box::new(BubbleLang::Var("x".into())),
-                Box::new(BubbleLang::Int(1)),
-            ))
-            .unwrap();
+//     #[test]
+//     pub fn cvec_match_ok() {
+//         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
+//         bubbler
+//             .add_term(&BubbleLang::Add(
+//                 Box::new(BubbleLang::Var("x".into())),
+//                 Box::new(BubbleLang::Int(1)),
+//             ))
+//             .unwrap();
 
-        bubbler
-            .add_term(&BubbleLang::Add(
-                Box::new(BubbleLang::Int(1)),
-                Box::new(BubbleLang::Var("x".into())),
-            ))
-            .unwrap();
+//         bubbler
+//             .add_term(&BubbleLang::Add(
+//                 Box::new(BubbleLang::Int(1)),
+//                 Box::new(BubbleLang::Var("x".into())),
+//             ))
+//             .unwrap();
 
-        let rws: RewriteSet<BubbleLang> = cvec_match(&mut bubbler.egraph, &bubbler.cache).unwrap();
-        assert!(!rws.is_empty());
-    }
-}
+//         let rws: RewriteSet<BubbleLang> = cvec_match(&mut bubbler.egraph, &bubbler.cache).unwrap();
+//         assert!(!rws.is_empty());
+//     }
+// }

@@ -22,310 +22,245 @@ pub type Constant<L> = <L as Language>::Constant;
 /// An environment mapping variable names to a set of constants.
 pub type Environment<L> = HashMap<String, Vec<Constant<L>>>;
 
-pub trait Language: Sized + Clone + Debug {
-    type Var: Clone + Into<String>;
-    type Constant: Clone + Hash + Eq + Debug + Display + Ord;
-
-    fn name() -> &'static str;
-    fn op(&self) -> &str;
-
-    fn from_sexp(sexp: &Sexp) -> Result<Self, &'static str>;
-    fn to_sexp(&self) -> Sexp;
-
-    fn parse(s: &str) -> Result<Self, &'static str> {
-        let sexp = s
-            .parse::<Sexp>()
-            .map_err(|_| "Failed to parse S-expression.")?;
-        Self::from_sexp(&sexp)
-    }
-
-    fn schema() -> Vec<(&'static str, Vec<&'static str>)>;
-
-    fn make_environment(vars: &[String]) -> Environment<Self>;
-
-    fn to_egglog_src() -> String {
-        let mut s = format!("(datatype {}\n", Self::name());
-        for (variant, fields) in Self::schema() {
-            let fields_str = fields.join(" ");
-            s.push_str(&format!("  ({variant} {fields_str})\n"));
-        }
-        s.push(')');
-        s
-    }
-
-    fn children(&self) -> Vec<&Self>;
-
-    fn evaluate(&self, env: &Environment<Self>) -> CVec<Self>;
-
-    /// Returns the ID if this is a variable, otherwise None.
-    fn is_var(&self) -> Option<String>;
-    fn mk_var(id: &str) -> Self;
-
-    fn is_hole(&self) -> Option<String>;
-    fn mk_hole(id: &str) -> Self;
-
-    /// Returns a generalized version of this term.
-    /// This replaces all constants with holes, replaced in alphabetical order.
-    fn generalize(&self, cache: &mut HashMap<String, String>) -> Result<Self, &'static str> {
-        let letters = "abcdefghijklmnopqrstuvwxyz";
-        if let Some(id) = self.is_var() {
-            if let Some(new_id) = cache.get(&id) {
-                return Ok(Self::mk_var(new_id));
-            } else {
-                let new_id = letters
-                    .chars()
-                    .nth(cache.len())
-                    .ok_or("Ran out of variable names during generalization.")?
-                    .to_string();
-                cache.insert(id.clone(), new_id.clone());
-                return Ok(Self::mk_hole(&new_id));
-            }
-        } else if let Some(_) = self.is_hole() {
-            return Err("This is already generalized.");
-        } else {
-            let children = self
-                .children()
-                .iter()
-                .map(|c| c.generalize(cache))
-                .collect::<Result<Vec<Self>, &'static str>>()?;
-
-            // Reconstruct the term with generalized children.
-            // I don't like how we have to go from L -> Sexp -> L here.
-            let sexp = self.to_sexp();
-            let new_sexp = match sexp {
-                Sexp::Atom(a) => Sexp::Atom(a),
-                Sexp::List(mut l) => {
-                    if l.is_empty() {
-                        return Err("Empty list.");
-                    }
-                    let op = l.remove(0);
-                    let mut new_list = vec![op];
-                    for child in children {
-                        new_list.push(child.to_sexp());
-                    }
-                    Sexp::List(new_list)
-                }
-            };
-            Self::from_sexp(&new_sexp)
-        }
-    }
-
-    /// Returns a concretized version of this term.
-    /// You can kind of think of this as "replacing all the question marks"
-    /// with variables.
-    fn concretize(&self) -> Result<Self, &'static str> {
-        if let Some(_) = self.is_var() {
-            return Err("This is already concrete.");
-        } else if let Some(id) = self.is_hole() {
-            Ok(Self::mk_var(&id))
-        } else {
-            let children = self
-                .children()
-                .iter()
-                .map(|c| c.concretize())
-                .collect::<Result<Vec<Self>, &'static str>>()?;
-
-            let sexp = self.to_sexp();
-
-            // Reconstruct the term with concretized children.
-            let new_sexp = match sexp {
-                Sexp::Atom(a) => Sexp::Atom(a),
-                Sexp::List(mut l) => {
-                    if l.is_empty() {
-                        return Err("Empty list.");
-                    }
-                    let op = l.remove(0);
-                    let mut new_list = vec![op];
-                    for child in children {
-                        new_list.push(child.to_sexp());
-                    }
-                    Sexp::List(new_list)
-                }
-            };
-        }
-    }
-}
-
-/// A simple Bubbler language.
-#[derive(Clone, Debug)]
-pub enum BubbleLang {
-    Int(i64),
+pub enum Term<L: Language> {
+    Hole(String),
     Var(String),
-    Add(Box<BubbleLang>, Box<BubbleLang>),
-    Lt(Box<BubbleLang>, Box<BubbleLang>),
+    Const(Constant<L>),
+    Node(L::Op, Vec<Term<L>>),
 }
 
-#[derive(Clone, Debug)]
-pub enum BubbleType {
-    Int,
-    Bool,
+trait OpTrait {
+    fn arity(&self) -> usize;
+
+    fn name(&self) -> &'static str;
 }
 
-impl FromStr for BubbleType {
-    type Err = &'static str;
+pub trait Language: Clone + Debug {
+    type Constant: Clone + Debug + PartialEq + Eq + Hash + Display + FromStr;
+    type Op: Clone + Debug + PartialEq + Eq + Hash + OpTrait + FromStr;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "IntTy" => Ok(BubbleType::Int),
-            "BoolTy" => Ok(BubbleType::Bool),
-            _ => Err("Unknown type"),
-        }
-    }
-}
-
-impl From<&BubbleType> for String {
-    fn from(t: &BubbleType) -> Self {
-        match t {
-            BubbleType::Int => "IntTy".into(),
-            BubbleType::Bool => "BoolTy".into(),
-        }
-    }
-}
-
-impl Language for BubbleLang {
-    type Var = String;
-    type Constant = i64;
-
-    fn op(&self) -> &str {
-        match self {
-            BubbleLang::Int(_) => "Int",
-            BubbleLang::Var(_) => "Var",
-            BubbleLang::Add(_, _) => "Add",
-            BubbleLang::Lt(_, _) => "Lt",
-        }
-    }
-
-    fn name() -> &'static str {
-        "BubbleLang"
-    }
-
-    fn schema() -> Vec<(&'static str, Vec<&'static str>)> {
-        vec![
-            ("Int", vec!["i64"]),
-            ("Var", vec!["String"]),
-            ("Add", vec!["BubbleLang", "BubbleLang"]),
-            ("Lt", vec!["BubbleLang", "BubbleLang"]),
-        ]
-    }
-
-    fn from_sexp(sexp: &Sexp) -> Result<Self, &'static str> {
-        match sexp {
-            Sexp::Atom(_) => Err("Unexpected atom."),
-            Sexp::List(l) => {
-                if l.is_empty() {
-                    return Err("Empty list.");
-                }
-                let op = if let Sexp::Atom(op) = &l[0] {
-                    op.as_str()
-                } else {
-                    return Err("Expected an atom as the first element.");
-                };
-                let arg_len = l.len() - 1;
-                match (op, arg_len) {
-                    ("Var", 1) => {
-                        if let Sexp::Atom(v) = &l[1] {
-                            Ok(BubbleLang::Var(v.clone()))
-                        } else {
-                            Err("Var expects an atom.")
-                        }
-                    }
-                    ("Int", 1) => {
-                        if let Sexp::Atom(v) = &l[1] {
-                            if let Ok(num) = v.parse::<i64>() {
-                                Ok(BubbleLang::Int(num))
-                            } else {
-                                Err("Int expects a valid integer.")
-                            }
-                        } else {
-                            Err("Int expects an atom.")
-                        }
-                    }
-                    ("Add", 2) => {
-                        let left = BubbleLang::from_sexp(&l[1])?;
-                        let right = BubbleLang::from_sexp(&l[2])?;
-                        Ok(BubbleLang::Add(Box::new(left), Box::new(right)))
-                    }
-                    ("Lt", 2) => {
-                        let left = BubbleLang::from_sexp(&l[1])?;
-                        let right = BubbleLang::from_sexp(&l[2])?;
-                        Ok(BubbleLang::Lt(Box::new(left), Box::new(right)))
-                    }
-                    _ => Err("Unknown operation."),
-                }
-            }
-        }
-    }
-
-    fn to_sexp(&self) -> Sexp {
-        match self {
-            BubbleLang::Int(n) => {
-                Sexp::List(vec![Sexp::Atom("Int".into()), Sexp::Atom(n.to_string())])
-            }
-            BubbleLang::Var(v) => Sexp::List(vec![
-                Sexp::Atom("Var".into()),
-                Sexp::Atom(format!("\"{v}\"")),
-            ]),
-            BubbleLang::Add(left, right) => Sexp::List(vec![
-                Sexp::Atom("Add".into()),
-                left.to_sexp(),
-                right.to_sexp(),
-            ]),
-            BubbleLang::Lt(left, right) => Sexp::List(vec![
-                Sexp::Atom("Lt".into()),
-                left.to_sexp(),
-                right.to_sexp(),
-            ]),
-        }
-    }
-
-    fn is_var(&self) -> Option<String> {
-        match self {
-            BubbleLang::Var(v) => Some(v.clone()),
-            _ => None,
-        }
-    }
+    fn interesting_constants() -> Vec<Self::Constant>;
 
     fn make_environment(vars: &[String]) -> Environment<Self> {
-        let consts: Vec<i64> = vec![-10, -1, 0, 1, 2, 5, 100];
-
-        let cvecs = self_product(&consts, vars.len());
-
-        let mut env = HashMap::new();
-        for (i, v) in vars.iter().enumerate() {
-            env.insert(v.clone(), cvecs[i].clone());
+        let vals = Self::interesting_constants();
+        let mut env: Environment<Self> = HashMap::new();
+        let cross_product = self_product(&vals, vars.len());
+        for (i, var) in vars.iter().enumerate() {
+            env.insert(var.clone(), cross_product[i].clone());
         }
-
         env
     }
 
-    fn evaluate(&self, env: &Environment<Self>) -> CVec<Self> {
+    fn evaluate_op(op: &Self::Op, child_vecs: &[CVec<Self>]) -> CVec<Self>;
+}
+
+impl<L: Language> Term<L> {
+    pub fn from_sexp(sexp: &Sexp) -> Result<Term<L>, String> {
+        match sexp {
+            Sexp::Atom(s) => {
+                if s.starts_with('?') {
+                    Ok(Term::Hole(s.clone()))
+                } else if s.chars().all(|c| c.is_alphabetic()) {
+                    Ok(Term::Var(s.clone()))
+                } else {
+                    // Try to parse as constant
+                    let const_val = s
+                        .parse::<L::Constant>()
+                        .map_err(|_| format!("Failed to parse constant: {}", s))?;
+                    Ok(Term::Const(const_val))
+                }
+            }
+            Sexp::List(list) => {
+                if list.is_empty() {
+                    return Err("Empty S-expression list.".to_string());
+                }
+                let op_sexp = &list[0];
+                let op = match op_sexp {
+                    Sexp::Atom(op_name) => op_name
+                        .parse::<L::Op>()
+                        .map_err(|_| format!("Failed to parse operator: {}", op_name))?,
+                    _ => return Err("Operator must be an atom.".to_string()),
+                };
+                let mut children = vec![];
+                for child_sexp in &list[1..] {
+                    let child_term = Self::from_sexp(child_sexp)?;
+                    children.push(child_term);
+                }
+                Term::make_node(op, children)
+            }
+        }
+    }
+
+    pub fn to_sexp(&self) -> Sexp {
         match self {
-            BubbleLang::Int(n) => vec![Some(*n); env.values().next().map_or(1, |v| v.len())],
-            BubbleLang::Var(v) => env.get(v).cloned().unwrap().into_iter().map(Some).collect(),
-            BubbleLang::Add(left, right) => {
-                let left_cvec = left.evaluate(env);
-                let right_cvec = right.evaluate(env);
-                left_cvec
-                    .iter()
-                    .zip(right_cvec.iter())
-                    .map(|(l, r)| match (l, r) {
-                        (Some(lv), Some(rv)) => Some(lv + rv),
-                        _ => None,
-                    })
-                    .collect()
+            Term::Hole(name) => Sexp::Atom(name.clone()),
+            Term::Var(name) => Sexp::Atom(name.clone()),
+            Term::Const(c) => Sexp::Atom(format!("{}", c)),
+            Term::Node(op, children) => {
+                let mut list = vec![Sexp::Atom(format!("{}", op.name()))];
+                for child in children {
+                    list.push(child.to_sexp());
+                }
+                Sexp::List(list)
             }
-            BubbleLang::Lt(left, right) => {
-                let left_cvec = left.evaluate(env);
-                let right_cvec = right.evaluate(env);
-                left_cvec
-                    .iter()
-                    .zip(right_cvec.iter())
-                    .map(|(l, r)| match (l, r) {
-                        (Some(lv), Some(rv)) => Some(if lv < rv { 1 } else { 0 }),
-                        _ => None,
-                    })
-                    .collect()
+        }
+    }
+
+    pub fn make_node(op: L::Op, children: Vec<Term<L>>) -> Result<Self, String> {
+        if children.len() != op.arity() {
+            return Err(format!(
+                "Operator {} expects {} children, got {}",
+                op.name(),
+                op.arity(),
+                children.len()
+            ));
+        }
+        Ok(Term::Node(op, children))
+    }
+
+    pub fn children(&self) -> &[Term<L>] {
+        match self {
+            Term::Node(_, children) => children,
+            _ => &[],
+        }
+    }
+
+    pub fn is_concrete(&self) -> bool {
+        match self {
+            Term::Hole(_) => false,
+            Term::Var(_) => true,
+            Term::Const(_) => true,
+            Term::Node(_, children) => children.iter().all(|c| c.is_concrete()),
+        }
+    }
+
+    pub fn generalize(&self, cache: &mut HashMap<String, String>) -> Result<Self, String> {
+        let letters = "abcdefghijklmnopqrstuvwxyz";
+        match self {
+            Term::Hole(name) => Err(format!("Found metavariable {} in generalization.", name)),
+            Term::Var(name) => {
+                if let Some(gen_name) = cache.get(name) {
+                    Ok(Term::Var(gen_name.clone()))
+                } else {
+                    let gen_name = format!(
+                        "?{}",
+                        letters
+                            .chars()
+                            .nth(cache.len())
+                            .ok_or("Too many variables to generalize.")?
+                    );
+                    cache.insert(name.clone(), gen_name.clone());
+                    Ok(Term::Var(gen_name))
+                }
             }
+            Term::Const(c) => Ok(Term::Const(c.clone())),
+            Term::Node(op, children) => {
+                let gen_children: Result<Vec<Term<L>>, String> =
+                    children.iter().map(|c| c.generalize(cache)).collect();
+                Ok(Term::Node(op.clone(), gen_children?))
+            }
+        }
+    }
+
+    pub fn concretize(&self) -> Result<Self, String> {
+        match self {
+            Term::Hole(name) => {
+                assert!(name.starts_with('?'), "A hole must start with '?'.");
+                let con_name = name.trim_start_matches('?').to_string();
+                Ok(Term::Var(con_name))
+            }
+            Term::Var(name) => Err(format!(
+                "Found concrete variable {} in concretization.",
+                name
+            )),
+            Term::Const(c) => Ok(Term::Const(c.clone())),
+            Term::Node(op, children) => {
+                let conc_children: Result<Vec<Term<L>>, String> =
+                    children.iter().map(|c| c.concretize()).collect();
+                Ok(Term::Node(op.clone(), conc_children?))
+            }
+        }
+    }
+
+    /// Evaluate a term as a CVec, using a language-specific vectorized evaluator
+    pub fn evaluate(&self, env: &Environment<L>) -> CVec<L> {
+        match self {
+            Term::Const(c) => {
+                // Broadcast constant across the CVec length
+                vec![Some(c.clone()); env.values().into_iter().next().map_or(1, |v| v.len())]
+            }
+            Term::Var(v) => env.get(v).cloned().unwrap().into_iter().map(Some).collect(),
+            Term::Node(op, children) => {
+                let child_vecs: Vec<_> = children.iter().map(|c| c.evaluate(env)).collect();
+                L::evaluate_op(op, &child_vecs)
+            }
+            Term::Hole(_) => {
+                panic!("Cannot evaluate a term with holes. You should `concretize` it first.")
+            }
+        }
+    }
+}
+
+/// A simple language for demonstration purposes.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum BubbleLangOp {
+    Neg,
+    Add,
+}
+
+impl FromStr for BubbleLangOp {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Neg" => Ok(BubbleLangOp::Neg),
+            "Add" => Ok(BubbleLangOp::Add),
+            _ => Err(format!("Unknown BubbleLangOp: {}", s)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BubbleLang;
+
+impl Language for BubbleLang {
+    type Constant = i64;
+    type Op = BubbleLangOp;
+
+    fn interesting_constants() -> Vec<Self::Constant> {
+        vec![-1, 0, 1, 2, 5, 100]
+    }
+
+    fn evaluate_op(op: &Self::Op, child_vecs: &[CVec<Self>]) -> CVec<Self> {
+        match op {
+            BubbleLangOp::Neg => child_vecs[0]
+                .iter()
+                .map(|v| v.as_ref().map(|c| -c))
+                .collect(),
+            BubbleLangOp::Add => child_vecs[0]
+                .iter()
+                .zip(child_vecs[1].iter())
+                .map(|(v1, v2)| match (v1, v2) {
+                    (Some(c1), Some(c2)) => Some(c1 + c2),
+                    _ => None,
+                })
+                .collect(),
+        }
+    }
+}
+
+impl OpTrait for BubbleLangOp {
+    fn arity(&self) -> usize {
+        match self {
+            BubbleLangOp::Neg => 1,
+            BubbleLangOp::Add => 2,
+        }
+    }
+
+    fn name(&self) -> &'static str {
+        match self {
+            BubbleLangOp::Neg => "Neg",
+            BubbleLangOp::Add => "Add",
         }
     }
 }
@@ -351,4 +286,22 @@ pub fn self_product<T: Clone>(ts: &[T], n: usize) -> Vec<Vec<T>> {
         res.push(entry);
     }
     res
+}
+
+#[cfg(test)]
+mod lang_tests {
+    use super::*;
+
+    #[test]
+    fn test_arity() {
+        use BubbleLangOp::*;
+
+        // Correct arity
+        let ok = Term::<BubbleLang>::make_node(Add, vec![Term::Const(1), Term::Const(2)]);
+        assert!(ok.is_ok());
+
+        // Wrong arity
+        let fail = Term::<BubbleLang>::make_node(Add, vec![Term::Const(1)]);
+        assert!(fail.is_err());
+    }
 }
