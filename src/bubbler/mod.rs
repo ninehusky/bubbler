@@ -3,10 +3,9 @@ use std::hash::{Hash, Hasher};
 
 use egglog::EGraph;
 
-use egglog::ast::Rule;
-
 use crate::language::implication::Implication;
 use crate::language::rule::Rewrite;
+use crate::language::sexp::Sexp;
 use crate::language::{CVec, Environment, Language, Term};
 
 pub(crate) const GET_CVEC_FN: &str = "get-cvec";
@@ -61,6 +60,12 @@ impl Default for BubblerSchedule {
 }
 
 pub struct CVecCache<L: Language>(pub HashMap<u64, CVec<L>>);
+
+impl<L: Language> Default for CVecCache<L> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl<L: Language> CVecCache<L> {
     pub fn lookup_from_str(&self, s: &str) -> Option<&CVec<L>> {
@@ -134,7 +139,7 @@ impl<L: Language> Bubbler<L> {
 
             ;;; If Bubbler discovers that two terms are not equal (through
             ;;; validation), then we record that information here.
-            (relation {NOT_EQUAL_FN} ({name} {name} {name}))
+            (relation {NOT_EQUAL_FN} ({name} {name}))
             "#
             )
             .as_str()
@@ -142,9 +147,36 @@ impl<L: Language> Bubbler<L> {
         .unwrap();
     }
 
+    pub fn egglogify(term: &Term<L>) -> Sexp {
+        fn rewrite(sexp: Sexp) -> Sexp {
+            match sexp {
+                Sexp::Atom(_) => sexp,
+
+                Sexp::List(items) => {
+                    // Special case: (Var x)
+                    if items.len() == 2
+                        && let Sexp::Atom(ref head) = items[0]
+                        && head == "Var"
+                        && let Sexp::Atom(ref v) = items[1]
+                    {
+                        return Sexp::List(vec![
+                            Sexp::Atom("Var".into()),
+                            Sexp::Atom(format!("\"{}\"", v)),
+                        ]);
+                    }
+
+                    // Normal case: recursively rewrite children
+                    Sexp::List(items.into_iter().map(rewrite).collect())
+                }
+            }
+        }
+
+        rewrite(term.to_sexp())
+    }
+
     /// Adds the term to the e-graph, erroring if the term is malformed.
     pub fn add_term(&mut self, term: &Term<L>) -> Result<CVec<L>, egglog::Error> {
-        let sexp = term.to_sexp();
+        let sexp = Bubbler::egglogify(term);
         let cvec = term.evaluate(&self.environment);
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         cvec.hash(&mut hasher);

@@ -2,71 +2,31 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use super::{CVec, Language};
 use crate::{
-    bubbler::{CVecCache, GET_CVEC_FN},
-    language::{sexp::Sexp, Term},
+    bubbler::{Bubbler, CVecCache, GET_CVEC_FN},
+    language::{Term, sexp::Sexp},
     run_prog,
 };
-use egglog::{util::IndexMap, CommandOutput, EGraph};
-
-/// The type of rewrite: concrete or generalized.
-/// You usually want rewrites to be generalized, but in
-/// certain situations (e.g., validation by SMT),
-/// you need to translate these to concrete rewrites.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RewriteType {
-    Concrete,
-    Generalized,
-}
+use egglog::{CommandOutput, EGraph, util::IndexMap};
 
 #[derive(Clone)]
 pub struct Rewrite<L: Language> {
-    pub rw_type: RewriteType,
-    pub cond: Option<L>,
-    pub lhs: L,
-    pub rhs: L,
+    pub cond: Option<Term<L>>,
+    pub lhs: Term<L>,
+    pub rhs: Term<L>,
 }
 
 impl<L: Language> Rewrite<L> {
-    pub fn new_concrete(cond: Option<L>, lhs: L, rhs: L) -> Self {
-        Self {
-            rw_type: RewriteType::Concrete,
-            cond,
-            lhs,
-            rhs,
-        }
-    }
+    pub fn new(cond: Option<Term<L>>, lhs: Term<L>, rhs: Term<L>) -> Self {
+        let mut map = HashMap::new();
+        let cond = cond.map(|c| {
+            c.generalize(&mut map)
+                .expect("Failed to generalize condition.")
+        });
 
-    pub fn new_generalized(cond: Option<L>, lhs: L, rhs: L) -> Self {
-        Self {
-            rw_type: RewriteType::Generalized,
-            cond,
-            lhs,
-            rhs,
-        }
-    }
+        let lhs = lhs.generalize(&mut map).expect("Failed to generalize LHS.");
+        let rhs = rhs.generalize(&mut map).expect("Failed to generalize RHS.");
 
-    pub fn generalize(&self) -> Self {
-        match self.rw_type {
-            RewriteType::Concrete => Self {
-                rw_type: RewriteType::Generalized,
-                cond: self.cond.clone(),
-                lhs: self.lhs.clone(),
-                rhs: self.rhs.clone(),
-            },
-            RewriteType::Generalized => self.clone(),
-        }
-    }
-
-    pub fn concretize(&self) -> Self {
-        match self.rw_type {
-            RewriteType::Generalized => Self {
-                rw_type: RewriteType::Concrete,
-                cond: self.cond.clone(),
-                lhs: self.lhs.clone(),
-                rhs: self.rhs.clone(),
-            },
-            RewriteType::Concrete => self.clone(),
-        }
+        Self { cond, lhs, rhs }
     }
 }
 
@@ -75,6 +35,28 @@ pub struct RewriteSet<L: Language>(pub IndexMap<Arc<str>, Rewrite<L>>);
 impl<L: Language> RewriteSet<L> {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    pub fn add(&mut self, rw: Rewrite<L>) {
+        match rw.cond {
+            Some(_) => {
+                let key = format!(
+                    "if {} then {} ~> {}",
+                    rw.cond.as_ref().unwrap().to_sexp(),
+                    rw.lhs.to_sexp(),
+                    rw.rhs.to_sexp()
+                );
+                self.0.insert(Arc::from(key), rw);
+            }
+            None => {
+                let key = format!("{} ~> {}", rw.lhs.to_sexp(), rw.rhs.to_sexp());
+                self.0.insert(Arc::from(key), rw);
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 }
 
@@ -102,106 +84,110 @@ fn get_term<L: Language>(relation: String) -> Result<Term<L>, String> {
     Ok(res)
 }
 
-// pub fn cvec_match<L: Language>(
-//     egraph: &mut EGraph,
-//     cache: &CVecCache<L>,
-// ) -> Result<RewriteSet<L>, String> {
-//     let get_cvec_command = format!("(print-function {GET_CVEC_FN})");
-//     let result = match run_prog!(egraph, &get_cvec_command) {
-//         Ok(res) => res,
-//         Err(_) => {
-//             return Err("Failed to run PrintFunction command.".into());
-//         }
-//     };
+pub fn cvec_match<L: Language>(
+    egraph: &mut EGraph,
+    cache: &CVecCache<L>,
+) -> Result<RewriteSet<L>, String> {
+    let get_cvec_command = format!("(print-function {GET_CVEC_FN})");
+    let result = match run_prog!(egraph, &get_cvec_command) {
+        Ok(res) => res,
+        Err(_) => {
+            return Err("Failed to run PrintFunction command.".into());
+        }
+    };
 
-//     if result.len() != 1 {
-//         panic!("Expected exactly one result from PrintFunction command.");
-//     }
+    if result.len() != 1 {
+        panic!("Expected exactly one result from PrintFunction command.");
+    }
 
-//     let mut by_cvec: IndexMap<CVec<L>, Vec<L>> = IndexMap::default();
+    let mut by_cvec: IndexMap<CVec<L>, Vec<Term<L>>> = IndexMap::default();
+    let mut res = RewriteSet::default();
 
-//     // 1. Go through all cvecs for un-merged (black) e-classes.
-//     match &result[0] {
-//         CommandOutput::PrintFunction(_func, dag, tuples, _size) => {
-//             for (term, cvec) in tuples.iter() {
-//                 let term = get_term::<L>(dag.to_string(term))?;
-//                 let cvec = cache.lookup_from_str(&dag.to_string(cvec)).unwrap();
-//                 by_cvec.entry(cvec.clone()).or_default().push(term);
-//             }
-//         }
-//         _ => unreachable!("Expected PrintFunctionOutput."),
-//     }
+    // 1. Go through all cvecs for un-merged (black) e-classes.
+    match &result[0] {
+        CommandOutput::PrintFunction(_func, dag, tuples, _size) => {
+            for (term, cvec) in tuples.iter() {
+                let term = get_term::<L>(dag.to_string(term))?;
+                let cvec = cache.lookup_from_str(&dag.to_string(cvec)).unwrap();
+                by_cvec.entry(cvec.clone()).or_default().push(term);
+            }
+        }
+        _ => unreachable!("Expected PrintFunctionOutput."),
+    }
 
-//     // 2. Go pairwise through all terms with the same cvec and create rewrites
-//     //    from them.
-//     //    For each rule:
-//     //    - see if not equal by pinging egraph for (not-equal lhs rhs)
-//     //    - generalize the rule
-//     //    - add (no-op if already exists) to RewriteSet
-//     for (cvec, terms) in by_cvec.iter() {
-//         for term1 in terms.iter() {
-//             // Here, even though equality is symmetric, we want to consider both
-//             // directions separately. For some reason.
-//             for term2 in terms.iter() {
-//                 // Check if lhs and rhs are in different e-classes.
-//                 let check_neq_command = format!(
-//                     r#"
-//                     (extract (not-equal {lhs} {rhs}))
-//                 "#
-//                 );
-//                 let neq_result = run_prog!(egraph, &check_neq_command)?;
+    // 2. Go pairwise through all terms with the same cvec and create rewrites
+    //    from them.
+    for (_, terms) in by_cvec.iter() {
+        for lhs in terms.iter() {
+            // Here, even though equality is symmetric, we want to consider both
+            // directions separately. For some reason.
+            for rhs in terms.iter() {
+                if lhs == rhs {
+                    continue;
+                }
 
-//                 if neq_result.is_empty() {
-//                     // They are equal, skip.
-//                     continue;
-//                 }
+                // Check if lhs and rhs are in different e-classes.
+                let lhs_egglog = Bubbler::egglogify(lhs);
+                let rhs_egglog = Bubbler::egglogify(rhs);
 
-//                 // They are not equal, create a rewrite.
-//                 let rewrite = Rewrite::new(None, lhs.clone(), rhs.clone());
-//                 let key = format!("{} -> {}", format!("{lhs}"), format!("{rhs}"));
-//                 by_cvec.entry(cvec.clone()).or_default().push(lhs.clone());
-//             }
-//         }
-//     }
+                let check_neq_command = format!(
+                    r#"
+                    (extract (not-equal {lhs_egglog} {rhs_egglog}))
+                "#
+                );
+                let neq_result = run_prog!(egraph, &check_neq_command);
 
-//     println!("Found {} unique CVecs.", by_cvec.len());
-//     println!("{:?}", by_cvec);
+                if neq_result.is_err() {
+                    println!("{:?}", neq_result);
+                    return Err("Failed to run not-equal check.".into());
+                }
 
-//     Ok(Default::default())
-// }
+                if neq_result.unwrap().is_empty() {
+                    // They are equal, skip.
+                    continue;
+                }
 
-// #[cfg(test)]
-// mod cvec_match_tests {
-//     use crate::{
-//         bubbler::{Bubbler, BubblerConfig},
-//         language::BubbleLang,
-//     };
+                // They are not equal, create a rewrite.
+                let rewrite = Rewrite::new(None, lhs.clone(), rhs.clone());
+                res.add(rewrite);
+            }
+        }
+    }
 
-//     use super::*;
+    Ok(res)
+}
 
-//     #[allow(dead_code)]
-//     fn get_cfg() -> BubblerConfig<BubbleLang> {
-//         BubblerConfig::new(vec!["x".into(), "y".into()], vec![0, 1])
-//     }
+#[cfg(test)]
+mod cvec_match_tests {
+    use crate::{
+        bubbler::{Bubbler, BubblerConfig},
+        language::{BubbleLang, BubbleLangOp},
+    };
 
-//     #[test]
-//     pub fn cvec_match_ok() {
-//         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
-//         bubbler
-//             .add_term(&BubbleLang::Add(
-//                 Box::new(BubbleLang::Var("x".into())),
-//                 Box::new(BubbleLang::Int(1)),
-//             ))
-//             .unwrap();
+    use super::*;
 
-//         bubbler
-//             .add_term(&BubbleLang::Add(
-//                 Box::new(BubbleLang::Int(1)),
-//                 Box::new(BubbleLang::Var("x".into())),
-//             ))
-//             .unwrap();
+    #[allow(dead_code)]
+    fn get_cfg() -> BubblerConfig<BubbleLang> {
+        BubblerConfig::new(vec!["x".into(), "y".into()], vec![0, 1])
+    }
 
-//         let rws: RewriteSet<BubbleLang> = cvec_match(&mut bubbler.egraph, &bubbler.cache).unwrap();
-//         assert!(!rws.is_empty());
-//     }
-// }
+    #[test]
+    pub fn cvec_match_ok() {
+        let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
+        bubbler
+            .add_term(&Term::Node(
+                BubbleLangOp::Add,
+                vec![Term::Const(0), Term::Var("x".into())],
+            ))
+            .unwrap();
+
+        bubbler.add_term(&Term::Var("x".into())).unwrap();
+
+        let rws: RewriteSet<BubbleLang> = cvec_match(&mut bubbler.egraph, &bubbler.cache).unwrap();
+        for rw in rws.0.values() {
+            println!("Rewrite: {} ~> {}", rw.lhs.to_sexp(), rw.rhs.to_sexp());
+        }
+        // There should be two rewrite rules: one for the forward and one for the backward direction.
+        assert_eq!(rws.len(), 2);
+    }
+}

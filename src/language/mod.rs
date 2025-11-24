@@ -22,6 +22,7 @@ pub type Constant<L> = <L as Language>::Constant;
 /// An environment mapping variable names to a set of constants.
 pub type Environment<L> = HashMap<String, Vec<Constant<L>>>;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Term<L: Language> {
     Hole(String),
     Var(String),
@@ -35,7 +36,7 @@ pub trait OpTrait {
     fn name(&self) -> &'static str;
 }
 
-pub trait Language: Clone + Debug {
+pub trait Language: Clone + Debug + PartialEq + Eq {
     type Constant: Clone + Debug + PartialEq + Eq + Hash + Display + FromStr;
     type Op: Clone + Debug + Display + PartialEq + Eq + Hash + OpTrait + FromStr;
 
@@ -73,7 +74,7 @@ pub trait Language: Clone + Debug {
                 "Operators cannot be named 'Var' or 'Const'."
             );
             let mut op_str = format!("    ({}", op.name());
-            for i in 0..op.arity() {
+            for _ in 0..op.arity() {
                 op_str.push(' ');
                 op_str.push_str(Self::name());
             }
@@ -92,6 +93,8 @@ impl<L: Language> Term<L> {
     pub fn from_sexp(sexp: &Sexp) -> Result<Term<L>, String> {
         match sexp {
             Sexp::Atom(s) => {
+                // remove all quotes.
+                let s = s.trim_matches('"').to_string();
                 if s.starts_with('?') {
                     Ok(Term::Hole(s.clone()))
                 } else if s.chars().all(|c| c.is_alphabetic()) {
@@ -109,18 +112,45 @@ impl<L: Language> Term<L> {
                     return Err("Empty S-expression list.".to_string());
                 }
                 let op_sexp = &list[0];
-                let op = match op_sexp {
-                    Sexp::Atom(op_name) => op_name
-                        .parse::<L::Op>()
-                        .map_err(|_| format!("Failed to parse operator: {}", op_name))?,
-                    _ => return Err("Operator must be an atom.".to_string()),
-                };
                 let mut children = vec![];
                 for child_sexp in &list[1..] {
                     let child_term = Self::from_sexp(child_sexp)?;
                     children.push(child_term);
                 }
-                Term::make_node(op, children)
+
+                if let Sexp::Atom(op_name) = op_sexp {
+                    match op_name.as_str() {
+                        "Var" => {
+                            if children.len() != 1 {
+                                return Err("Var operator must have exactly one child.".to_string());
+                            }
+                            if let Term::Var(var_name) = &children[0] {
+                                Ok(Term::Var(var_name.clone()))
+                            } else {
+                                Err("Var operator child must be a variable name.".to_string())
+                            }
+                        }
+                        "Const" => {
+                            if children.len() != 1 {
+                                return Err(
+                                    "Const operator must have exactly one child.".to_string()
+                                );
+                            }
+                            if let Term::Const(c) = &children[0] {
+                                Ok(Term::Const(c.clone()))
+                            } else {
+                                Err("Const operator child must be a constant value.".to_string())
+                            }
+                        }
+                        _ => {
+                            let op = L::Op::from_str(op_name)
+                                .map_err(|_| format!("Failed to parse operator {}", op_name))?;
+                            Term::make_node(op, children)
+                        }
+                    }
+                } else {
+                    Err("Operator must be an atom.".to_string())
+                }
             }
         }
     }
@@ -137,7 +167,7 @@ impl<L: Language> Term<L> {
                 Sexp::Atom(format!("{}", c)),
             ]),
             Term::Node(op, children) => {
-                let mut list = vec![Sexp::Atom(format!("{}", op.name()))];
+                let mut list = vec![Sexp::Atom(op.name().to_string())];
                 for child in children {
                     list.push(child.to_sexp());
                 }
@@ -227,7 +257,7 @@ impl<L: Language> Term<L> {
         match self {
             Term::Const(c) => {
                 // Broadcast constant across the CVec length
-                vec![Some(c.clone()); env.values().into_iter().next().map_or(1, |v| v.len())]
+                vec![Some(c.clone()); env.values().next().map_or(1, |v| v.len())]
             }
             Term::Var(v) => env.get(v).cloned().unwrap().into_iter().map(Some).collect(),
             Term::Node(op, children) => {
@@ -238,6 +268,13 @@ impl<L: Language> Term<L> {
                 panic!("Cannot evaluate a term with holes. You should `concretize` it first.")
             }
         }
+    }
+}
+
+impl<L: Language> Display for Term<L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let sexp = self.to_sexp();
+        write!(f, "{}", sexp)
     }
 }
 
@@ -269,7 +306,7 @@ impl FromStr for BubbleLangOp {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BubbleLang;
 
 impl Language for BubbleLang {
