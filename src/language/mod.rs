@@ -53,10 +53,97 @@ pub trait Language: Sized + Clone + Debug {
         s
     }
 
+    fn children(&self) -> Vec<&Self>;
+
     fn evaluate(&self, env: &Environment<Self>) -> CVec<Self>;
 
     /// Returns the ID if this is a variable, otherwise None.
     fn is_var(&self) -> Option<String>;
+    fn mk_var(id: &str) -> Self;
+
+    fn is_hole(&self) -> Option<String>;
+    fn mk_hole(id: &str) -> Self;
+
+    /// Returns a generalized version of this term.
+    /// This replaces all constants with holes, replaced in alphabetical order.
+    fn generalize(&self, cache: &mut HashMap<String, String>) -> Result<Self, &'static str> {
+        let letters = "abcdefghijklmnopqrstuvwxyz";
+        if let Some(id) = self.is_var() {
+            if let Some(new_id) = cache.get(&id) {
+                return Ok(Self::mk_var(new_id));
+            } else {
+                let new_id = letters
+                    .chars()
+                    .nth(cache.len())
+                    .ok_or("Ran out of variable names during generalization.")?
+                    .to_string();
+                cache.insert(id.clone(), new_id.clone());
+                return Ok(Self::mk_hole(&new_id));
+            }
+        } else if let Some(_) = self.is_hole() {
+            return Err("This is already generalized.");
+        } else {
+            let children = self
+                .children()
+                .iter()
+                .map(|c| c.generalize(cache))
+                .collect::<Result<Vec<Self>, &'static str>>()?;
+
+            // Reconstruct the term with generalized children.
+            // I don't like how we have to go from L -> Sexp -> L here.
+            let sexp = self.to_sexp();
+            let new_sexp = match sexp {
+                Sexp::Atom(a) => Sexp::Atom(a),
+                Sexp::List(mut l) => {
+                    if l.is_empty() {
+                        return Err("Empty list.");
+                    }
+                    let op = l.remove(0);
+                    let mut new_list = vec![op];
+                    for child in children {
+                        new_list.push(child.to_sexp());
+                    }
+                    Sexp::List(new_list)
+                }
+            };
+            Self::from_sexp(&new_sexp)
+        }
+    }
+
+    /// Returns a concretized version of this term.
+    /// You can kind of think of this as "replacing all the question marks"
+    /// with variables.
+    fn concretize(&self) -> Result<Self, &'static str> {
+        if let Some(_) = self.is_var() {
+            return Err("This is already concrete.");
+        } else if let Some(id) = self.is_hole() {
+            Ok(Self::mk_var(&id))
+        } else {
+            let children = self
+                .children()
+                .iter()
+                .map(|c| c.concretize())
+                .collect::<Result<Vec<Self>, &'static str>>()?;
+
+            let sexp = self.to_sexp();
+
+            // Reconstruct the term with concretized children.
+            let new_sexp = match sexp {
+                Sexp::Atom(a) => Sexp::Atom(a),
+                Sexp::List(mut l) => {
+                    if l.is_empty() {
+                        return Err("Empty list.");
+                    }
+                    let op = l.remove(0);
+                    let mut new_list = vec![op];
+                    for child in children {
+                        new_list.push(child.to_sexp());
+                    }
+                    Sexp::List(new_list)
+                }
+            };
+        }
+    }
 }
 
 /// A simple Bubbler language.

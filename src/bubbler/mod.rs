@@ -11,8 +11,8 @@ use crate::language::{CVec, Environment, Language};
 
 pub(crate) const GET_CVEC_FN: &str = "get-cvec";
 
-/// If SMT says that p, q are not equal, then it is
-/// the case that if p' == p, q' == q, then p' and q' are also not equal.
+/// This relation records pairs of terms which external validation
+/// has determined to not ever be equal.
 pub(crate) const NOT_EQUAL_FN: &str = "not-equal";
 
 pub(crate) const HASH_CODE_FN: &str = "HashCode";

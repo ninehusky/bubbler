@@ -1,6 +1,4 @@
-use std::{str::FromStr, sync::Arc};
-
-use egglog::{util::IndexMap, CommandOutput, EGraph};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use super::{CVec, Language};
 use crate::{
@@ -8,16 +6,67 @@ use crate::{
     language::sexp::Sexp,
     run_prog,
 };
+use egglog::{util::IndexMap, CommandOutput, EGraph};
 
+/// The type of rewrite: concrete or generalized.
+/// You usually want rewrites to be generalized, but in
+/// certain situations (e.g., validation by SMT),
+/// you need to translate these to concrete rewrites.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RewriteType {
+    Concrete,
+    Generalized,
+}
+
+#[derive(Clone)]
 pub struct Rewrite<L: Language> {
+    pub rw_type: RewriteType,
     pub cond: Option<L>,
     pub lhs: L,
     pub rhs: L,
 }
 
 impl<L: Language> Rewrite<L> {
-    pub fn new(cond: Option<L>, lhs: L, rhs: L) -> Self {
-        Self { cond, lhs, rhs }
+    pub fn new_concrete(cond: Option<L>, lhs: L, rhs: L) -> Self {
+        Self {
+            rw_type: RewriteType::Concrete,
+            cond,
+            lhs,
+            rhs,
+        }
+    }
+
+    pub fn new_generalized(cond: Option<L>, lhs: L, rhs: L) -> Self {
+        Self {
+            rw_type: RewriteType::Generalized,
+            cond,
+            lhs,
+            rhs,
+        }
+    }
+
+    pub fn generalize(&self) -> Self {
+        match self.rw_type {
+            RewriteType::Concrete => Self {
+                rw_type: RewriteType::Generalized,
+                cond: self.cond.clone(),
+                lhs: self.lhs.clone(),
+                rhs: self.rhs.clone(),
+            },
+            RewriteType::Generalized => self.clone(),
+        }
+    }
+
+    pub fn concretize(&self) -> Self {
+        match self.rw_type {
+            RewriteType::Generalized => Self {
+                rw_type: RewriteType::Concrete,
+                cond: self.cond.clone(),
+                lhs: self.lhs.clone(),
+                rhs: self.rhs.clone(),
+            },
+            RewriteType::Concrete => self.clone(),
+        }
     }
 }
 
@@ -89,6 +138,31 @@ pub fn cvec_match<L: Language>(
     //    - see if not equal by pinging egraph for (not-equal lhs rhs)
     //    - generalize the rule
     //    - add (no-op if already exists) to RewriteSet
+    for (cvec, terms) in by_cvec.iter() {
+        for term1 in terms.iter() {
+            // Here, even though equality is symmetric, we want to consider both
+            // directions separately. For some reason.
+            for term2 in terms.iter() {
+                // Check if lhs and rhs are in different e-classes.
+                let check_neq_command = format!(
+                    r#"
+                    (extract (not-equal {lhs} {rhs}))
+                "#
+                );
+                let neq_result = run_prog!(egraph, &check_neq_command)?;
+
+                if neq_result.is_empty() {
+                    // They are equal, skip.
+                    continue;
+                }
+
+                // They are not equal, create a rewrite.
+                let rewrite = Rewrite::new(None, lhs.clone(), rhs.clone());
+                let key = format!("{} -> {}", format!("{lhs}"), format!("{rhs}"));
+                by_cvec.entry(cvec.clone()).or_default().push(lhs.clone());
+            }
+        }
+    }
 
     println!("Found {} unique CVecs.", by_cvec.len());
     println!("{:?}", by_cvec);
