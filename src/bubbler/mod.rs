@@ -151,9 +151,7 @@ impl<L: Language> Bubbler<L> {
         fn rewrite(sexp: Sexp) -> Sexp {
             match sexp {
                 Sexp::Atom(_) => sexp,
-
                 Sexp::List(items) => {
-                    // Special case: (Var x)
                     if items.len() == 2
                         && let Sexp::Atom(ref head) = items[0]
                         && head == "Var"
