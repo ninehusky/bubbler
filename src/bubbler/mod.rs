@@ -14,6 +14,8 @@ pub(crate) const GET_CVEC_FN: &str = "get-cvec";
 /// has determined to not ever be equal.
 pub(crate) const NOT_EQUAL_FN: &str = "not-equal";
 
+pub(crate) const COND_EQUAL_FN: &str = "cond-equal";
+
 pub(crate) const HASH_CODE_FN: &str = "HashCode";
 
 #[macro_export]
@@ -131,6 +133,8 @@ impl<L: Language> Bubbler<L> {
             self.egraph,
             format!(
                 r#"
+            (datatype Predicate
+                (PredTerm {name}))
             (datatype cvec ({HASH_CODE_FN} String))
 
             ;;; A relation that associates terms with their characteristic vectors.
@@ -140,6 +144,24 @@ impl<L: Language> Bubbler<L> {
             ;;; If Bubbler discovers that two terms are not equal (through
             ;;; validation), then we record that information here.
             (relation {NOT_EQUAL_FN} ({name} {name}))
+
+            ;;; Represents if under predicate `p`, `l` == `r`.
+            (relation {COND_EQUAL_FN} (Predicate {name} {name}))
+
+            (ruleset preserve-invariants)
+
+            ;;; symmetry of conditional equality
+            (rule
+              (({COND_EQUAL_FN} (PredTerm ?p) ?l ?r))
+              (({COND_EQUAL_FN} (PredTerm ?p) ?r ?l))
+              :ruleset preserve-invariants)
+
+            ;;; transitivity of conditional equality
+            (rule
+              (({COND_EQUAL_FN} (PredTerm ?p) ?l ?m)
+               ({COND_EQUAL_FN} (PredTerm ?p) ?m ?r))
+              (({COND_EQUAL_FN} (PredTerm ?p) ?l ?r))
+              :ruleset preserve-invariants)
             "#
             )
             .as_str()
