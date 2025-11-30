@@ -18,6 +18,8 @@ pub struct Rewrite<L: Language> {
 }
 
 impl<L: Language> Rewrite<L> {
+    // NOTE: do not make another constructor for this that is _not_ generalized,
+    // without a very good, very documented reason.
     pub fn new(cond: Option<Term<L>>, lhs: Term<L>, rhs: Term<L>) -> Self {
         let mut map = HashMap::new();
         let cond = cond.map(|c| {
@@ -29,18 +31,6 @@ impl<L: Language> Rewrite<L> {
         let rhs = rhs.generalize(&mut map).expect("Failed to generalize RHS.");
 
         Self { cond, lhs, rhs }
-    }
-
-    pub fn generalize(&self) -> Result<Self, String> {
-        let mut map = HashMap::new();
-        let cond = if let Some(c) = &self.cond {
-            Some(c.generalize(&mut map)?)
-        } else {
-            None
-        };
-        let lhs = self.lhs.generalize(&mut map)?;
-        let rhs = self.rhs.generalize(&mut map)?;
-        Ok(Self { cond, lhs, rhs })
     }
 }
 

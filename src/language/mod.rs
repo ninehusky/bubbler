@@ -204,13 +204,37 @@ impl<L: Language> Term<L> {
         }
     }
 
+    /// Generalize variables in this term into metavariables ?a, ?b, etc.
+    /// Errors if the term already contains a Hole.
+    ///
+    /// ```
+    /// use bubbler::language::{Language, Term, BubbleLang};
+    /// use bubbler::language::BubbleLangOp;
+    /// use std::collections::HashMap;
+    ///
+    /// let x_plus_1 = Term::<BubbleLang>::make_node(
+    ///   BubbleLangOp::Add,
+    ///   vec![
+    ///       Term::Var("x".to_string()),
+    ///       Term::Var("y".to_string()),
+    ///   ]);
+    /// let mut cache = HashMap::new();
+    /// let gen_term = x_plus_1.unwrap().generalize(&mut cache).unwrap();
+    /// assert_eq!(gen_term.to_string().replace(" ", ""), "(Add ?a ?b)".replace(" ", ""));
+    ///
+    /// ```
     pub fn generalize(&self, cache: &mut HashMap<String, String>) -> Result<Self, String> {
+        println!("top level call: {}", self.to_string());
         let letters = "abcdefghijklmnopqrstuvwxyz";
         match self {
-            Term::Hole(name) => Err(format!("Found metavariable {} in generalization.", name)),
+            Term::Hole(name) => Err(format!(
+                "Found metavariable {} in generalization of {}.",
+                name,
+                self.to_string()
+            )),
             Term::Var(name) => {
                 if let Some(gen_name) = cache.get(name) {
-                    Ok(Term::Var(gen_name.clone()))
+                    Ok(Term::Hole(gen_name.clone()))
                 } else {
                     let gen_name = format!(
                         "?{}",
@@ -220,11 +244,13 @@ impl<L: Language> Term<L> {
                             .ok_or("Too many variables to generalize.")?
                     );
                     cache.insert(name.clone(), gen_name.clone());
-                    Ok(Term::Var(gen_name))
+                    Ok(Term::Hole(gen_name))
                 }
             }
             Term::Const(c) => Ok(Term::Const(c.clone())),
             Term::Node(op, children) => {
+                println!("op: {}", op);
+                println!("children: {:?}", children);
                 let gen_children: Result<Vec<Term<L>>, String> =
                     children.iter().map(|c| c.generalize(cache)).collect();
                 Ok(Term::Node(op.clone(), gen_children?))

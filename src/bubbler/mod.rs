@@ -130,7 +130,6 @@ impl<L: Language> Bubbler<L> {
             return Err("Rule already registered.".into());
         }
 
-        let rule = rule.generalize()?;
         let lhs = Bubbler::egglogify(&rule.lhs);
         let rhs = Bubbler::egglogify(&rule.rhs);
 
@@ -212,7 +211,7 @@ impl<L: Language> Bubbler<L> {
         .unwrap();
     }
 
-    // TODO: make unit test for this
+    // TODO: make unit test for this. A good Maxim task
     pub fn egglogify(term: &Term<L>) -> Sexp {
         fn rewrite(sexp: Sexp) -> Sexp {
             match sexp {
@@ -309,7 +308,7 @@ impl<L: Language> Bubbler<L> {
 }
 
 mod tests {
-    use crate::language::BubbleLang;
+    use crate::language::{BubbleLang, BubbleLangOp};
 
     use super::*;
 
@@ -362,5 +361,26 @@ mod tests {
 
         assert!(e.to_string().contains("Illegal merge"));
 
+    }
+
+
+    #[test]
+    fn egglogify_ok_with_vars() {
+        let r: Rewrite<BubbleLang> = Rewrite::new(
+            None,
+            Term::Node(
+                BubbleLangOp::Add,
+                vec![Term::Var("x".into()), Term::Const(1)],
+            ),
+            Term::Node(
+                BubbleLangOp::Add,
+                vec![Term::Const(1), Term::Var("x".into())],
+            ),
+        );
+        let sexp_lhs = Bubbler::egglogify(&r.lhs);
+        let sexp_rhs = Bubbler::egglogify(&r.rhs);
+        // make it whitespace-insensitive by doing this:
+        assert_eq!(sexp_lhs.to_string().replace(" ", ""), "(Add ?a (Const 1))".replace(" ", ""));
+        assert_eq!(sexp_rhs.to_string().replace(" ", ""), "(Add (Const 1) ?a)".replace(" ", ""));
     }
 }
