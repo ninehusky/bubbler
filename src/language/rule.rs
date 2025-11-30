@@ -3,12 +3,14 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use super::{CVec, Language};
 use crate::{
     bubbler::{Bubbler, CVecCache, GET_CVEC_FN},
-    language::{Term, sexp::Sexp},
+    language::{sexp::Sexp, Term},
     run_prog,
 };
-use egglog::{CommandOutput, EGraph, util::IndexMap};
+use egglog::{util::IndexMap, CommandOutput, EGraph};
 
-#[derive(Clone)]
+use crate::bubbler::COND_EQUAL_FN;
+
+#[derive(Clone, Eq, PartialEq)]
 pub struct Rewrite<L: Language> {
     pub cond: Option<Term<L>>,
     pub lhs: Term<L>,
@@ -27,6 +29,18 @@ impl<L: Language> Rewrite<L> {
         let rhs = rhs.generalize(&mut map).expect("Failed to generalize RHS.");
 
         Self { cond, lhs, rhs }
+    }
+
+    pub fn generalize(&self) -> Result<Self, String> {
+        let mut map = HashMap::new();
+        let cond = if let Some(c) = &self.cond {
+            Some(c.generalize(&mut map)?)
+        } else {
+            None
+        };
+        let lhs = self.lhs.generalize(&mut map)?;
+        let rhs = self.rhs.generalize(&mut map)?;
+        Ok(Self { cond, lhs, rhs })
     }
 }
 
