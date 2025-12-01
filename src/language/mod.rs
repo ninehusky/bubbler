@@ -1,3 +1,8 @@
+//! This module defines the core language abstractions for Bubbler.
+//! Generally, this module should only describe the stuff you need to
+//! evaluate terms; e-graph/egglog stuff outside of `L::to_egglog_src`
+//! should go elsewhere.
+
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
@@ -51,8 +56,6 @@ pub trait Language: Clone + Debug + PartialEq + Eq {
         let cross_product = self_product(&vals, vars.len());
 
         for (i, var) in vars.iter().enumerate() {
-            // Debug print
-            println!("Assigning {} to {:?}", var, cross_product[i]);
             env.insert(var.clone(), cross_product[i].clone());
         }
 
@@ -206,6 +209,8 @@ impl<L: Language> Term<L> {
 
     /// Generalize variables in this term into metavariables ?a, ?b, etc.
     /// Errors if the term already contains a Hole.
+    /// Panics if there are more than 26 variables to generalize.
+    /// But if you get that far, there are bigger things to worry about.
     ///
     /// ```
     /// use bubbler::language::{Language, Term, BubbleLang};
@@ -224,7 +229,6 @@ impl<L: Language> Term<L> {
     ///
     /// ```
     pub fn generalize(&self, cache: &mut HashMap<String, String>) -> Result<Self, String> {
-        println!("top level call: {}", self.to_string());
         let letters = "abcdefghijklmnopqrstuvwxyz";
         match self {
             Term::Hole(name) => Err(format!(
@@ -285,7 +289,11 @@ impl<L: Language> Term<L> {
                 // Broadcast constant across the CVec length
                 vec![Some(c.clone()); env.values().next().map_or(1, |v| v.len())]
             }
-            Term::Var(v) => env.get(v).cloned().unwrap().into_iter().map(Some).collect(),
+            Term::Var(v) => {
+                println!("v: {}", v);
+                println!("env keys: {:?}", env.keys());
+                env.get(v).cloned().unwrap().into_iter().map(Some).collect()
+            }
             Term::Node(op, children) => {
                 let child_vecs: Vec<_> = children.iter().map(|c| c.evaluate(env)).collect();
                 L::evaluate_op(op, &child_vecs)
@@ -308,14 +316,18 @@ impl<L: Language> Display for Term<L> {
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum BubbleLangOp {
     Neg,
+    Neq,
     Add,
+    Div,
 }
 
 impl Display for BubbleLangOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BubbleLangOp::Neg => write!(f, "Neg"),
+            BubbleLangOp::Neq => write!(f, "Neq"),
             BubbleLangOp::Add => write!(f, "Add"),
+            BubbleLangOp::Div => write!(f, "Div"),
         }
     }
 }
@@ -327,6 +339,8 @@ impl FromStr for BubbleLangOp {
         match s {
             "Neg" => Ok(BubbleLangOp::Neg),
             "Add" => Ok(BubbleLangOp::Add),
+            "Neq" => Ok(BubbleLangOp::Neq),
+            "Div" => Ok(BubbleLangOp::Div),
             _ => Err(format!("Unknown BubbleLangOp: {}", s)),
         }
     }
@@ -344,7 +358,12 @@ impl Language for BubbleLang {
     }
 
     fn ops() -> Vec<BubbleLangOp> {
-        vec![BubbleLangOp::Neg, BubbleLangOp::Add]
+        vec![
+            BubbleLangOp::Neg,
+            BubbleLangOp::Add,
+            BubbleLangOp::Neq,
+            BubbleLangOp::Div,
+        ]
     }
 
     fn interesting_constants() -> Vec<Self::Constant> {
@@ -365,6 +384,23 @@ impl Language for BubbleLang {
                     _ => None,
                 })
                 .collect(),
+            BubbleLangOp::Neq => child_vecs[0]
+                .iter()
+                .zip(child_vecs[1].iter())
+                .map(|(v1, v2)| match (v1, v2) {
+                    (Some(c1), Some(c2)) => Some((c1 != c2) as i64),
+                    _ => None,
+                })
+                .collect(),
+            BubbleLangOp::Div => child_vecs[0]
+                .iter()
+                .zip(child_vecs[1].iter())
+                .map(|(v1, v2)| match (v1, v2) {
+                    (Some(_), Some(0)) => None, // Division by zero
+                    (Some(c1), Some(c2)) => Some(c1 / c2),
+                    _ => None,
+                })
+                .collect(),
         }
     }
 }
@@ -374,6 +410,8 @@ impl OpTrait for BubbleLangOp {
         match self {
             BubbleLangOp::Neg => 1,
             BubbleLangOp::Add => 2,
+            BubbleLangOp::Neq => 2,
+            BubbleLangOp::Div => 2,
         }
     }
 
@@ -381,6 +419,8 @@ impl OpTrait for BubbleLangOp {
         match self {
             BubbleLangOp::Neg => "Neg",
             BubbleLangOp::Add => "Add",
+            BubbleLangOp::Neq => "Neq",
+            BubbleLangOp::Div => "Div",
         }
     }
 }
