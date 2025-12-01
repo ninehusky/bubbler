@@ -8,7 +8,6 @@ use crate::{
 };
 use egglog::{CommandOutput, EGraph, util::IndexMap};
 
-
 #[derive(Clone, Eq, PartialEq)]
 pub struct Rewrite<L: Language> {
     pub cond: Option<Term<L>>,
