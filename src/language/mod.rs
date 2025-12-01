@@ -234,7 +234,7 @@ impl<L: Language> Term<L> {
             Term::Hole(name) => Err(format!(
                 "Found metavariable {} in generalization of {}.",
                 name,
-                self.to_string()
+                self
             )),
             Term::Var(name) => {
                 if let Some(gen_name) = cache.get(name) {

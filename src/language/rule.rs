@@ -3,12 +3,11 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use super::{CVec, Language};
 use crate::{
     bubbler::{Bubbler, CVecCache, GET_CVEC_FN},
-    language::{sexp::Sexp, Term},
+    language::{Term, sexp::Sexp},
     run_prog,
 };
-use egglog::{util::IndexMap, CommandOutput, EGraph};
+use egglog::{CommandOutput, EGraph, util::IndexMap};
 
-use crate::bubbler::COND_EQUAL_FN;
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Rewrite<L: Language> {

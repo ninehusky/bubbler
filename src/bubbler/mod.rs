@@ -8,7 +8,6 @@ use crate::language::rule::Rewrite;
 use crate::language::sexp::Sexp;
 use crate::language::{CVec, Environment, Language, Term};
 
-
 pub(crate) const GET_CVEC_FN: &str = "get-cvec";
 /// This relation records pairs of terms which external validation
 /// has determined to not ever be equal.
@@ -129,7 +128,7 @@ impl<L: Language> Bubbler<L> {
     /// Adds the given rule to the Bubbler's set of rewrite rules.
     /// Errors if the rule already exists.
     pub fn register(&mut self, rule: &Rewrite<L>) -> Result<(), String> {
-        if self.rules.contains(&rule) {
+        if self.rules.contains(rule) {
             return Err("Rule already registered.".into());
         }
 
@@ -138,24 +137,28 @@ impl<L: Language> Bubbler<L> {
 
         let rw_prog = match rule.cond {
             Some(ref c) => {
-                let c = Bubbler::egglogify(&c);
-                format!(r#"
+                let c = Bubbler::egglogify(c);
+                format!(
+                    r#"
                 (rule
                     (({UNIVERSAL_PREDICATE_RELATION} (PredTerm {c}))
                      ({UNIVERSAL_TERM_RELATION} {lhs}))
                     (({COND_EQUAL_FN} (PredTerm {c}) {lhs} {rhs})
                      ({UNIVERSAL_TERM_RELATION} {rhs}))
                     :ruleset {REWRITE_RULESET})
-                "#)
+                "#
+                )
             }
             None => {
-                format!(r#"
+                format!(
+                    r#"
                 (rule
                     (({UNIVERSAL_TERM_RELATION} {lhs}))
                     ((union {lhs} {rhs})
                      ({UNIVERSAL_TERM_RELATION} {rhs}))
                     :ruleset {REWRITE_RULESET})
-                "#)
+                "#
+                )
             }
         };
         run_prog!(self.egraph, &rw_prog)?;
@@ -231,7 +234,6 @@ impl<L: Language> Bubbler<L> {
                         && head == "Var"
                         && let Sexp::Atom(ref v) = items[1]
                     {
-
                         return Sexp::List(vec![
                             Sexp::Atom("Var".into()),
                             Sexp::Atom(format!("\"{}\"", v)),
@@ -239,8 +241,9 @@ impl<L: Language> Bubbler<L> {
                     } else if items.len() == 2
                         && let Sexp::Atom(ref head) = items[0]
                         && head == "Hole"
-                        && let Sexp::Atom(ref v) = items[1] {
-                            return Sexp::Atom(format!("?{}", v));
+                        && let Sexp::Atom(ref v) = items[1]
+                    {
+                        return Sexp::Atom(format!("?{}", v));
                     }
 
                     // Normal case: recursively rewrite children
@@ -271,7 +274,7 @@ impl<L: Language> Bubbler<L> {
         if !condition.is_concrete() {
             return Err("Conditions must be concrete terms.".into());
         }
-        let sexp = Bubbler::egglogify(&condition);
+        let sexp = Bubbler::egglogify(condition);
         let cond_prog = format!(
             r#"
             ({UNIVERSAL_PREDICATE_RELATION} (PredTerm {sexp}))
@@ -350,7 +353,7 @@ impl<L: Language> Bubbler<L> {
 }
 
 mod tests {
-    use crate::language::{BubbleLang, BubbleLangOp};
+    use crate::language::BubbleLang;
 
     use super::*;
 
@@ -395,14 +398,14 @@ mod tests {
             (not-equal (Const 42) (Const 43))
             (union (Const 42) (Const 43))
             (run 10)
-        "#);
+        "#,
+        );
 
         assert!(res.is_err());
 
         let e = res.err().unwrap();
 
         assert!(e.to_string().contains("Illegal merge"));
-
     }
 
     // TODO Maxim: it would be a good idea to make this a doctest.
@@ -421,8 +424,14 @@ mod tests {
         );
         let sexp_lhs = Bubbler::egglogify(&r.lhs);
         let sexp_rhs = Bubbler::egglogify(&r.rhs);
-        assert_eq!(sexp_lhs.to_string().replace(" ", ""), "(Add ?a (Const 1))".replace(" ", ""));
-        assert_eq!(sexp_rhs.to_string().replace(" ", ""), "(Add (Const 1) ?a)".replace(" ", ""));
+        assert_eq!(
+            sexp_lhs.to_string().replace(" ", ""),
+            "(Add ?a (Const 1))".replace(" ", "")
+        );
+        assert_eq!(
+            sexp_rhs.to_string().replace(" ", ""),
+            "(Add (Const 1) ?a)".replace(" ", "")
+        );
     }
 
     #[test]
@@ -443,22 +452,24 @@ mod tests {
         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
         bubbler.register(&r).unwrap();
 
-        bubbler.add_condition(&Term::Node(
-            BubbleLangOp::Neq,
-            vec![Term::Var("x".into()), Term::Const(0)],
-        )).unwrap();
+        bubbler
+            .add_condition(&Term::Node(
+                BubbleLangOp::Neq,
+                vec![Term::Var("x".into()), Term::Const(0)],
+            ))
+            .unwrap();
 
-        bubbler.add_term(
-            &Term::Node(
+        bubbler
+            .add_term(&Term::Node(
                 BubbleLangOp::Div,
                 vec![Term::Var("x".into()), Term::Var("x".into())],
-            )).unwrap();
+            ))
+            .unwrap();
 
         bubbler.run_rewrites(7).unwrap();
 
         assert!(bubbler.egraph.parse_and_run_program(None,
             format!("(check ({COND_EQUAL_FN} (PredTerm (Neq (Var \"x\") (Const 0))) (Div (Var \"x\") (Var \"x\")) (Const 1)))").as_str()).is_ok());
-
     }
 
     #[test]
@@ -472,25 +483,31 @@ mod tests {
             Term::Node(
                 BubbleLangOp::Add,
                 vec![Term::Var("y".into()), Term::Var("x".into())],
-            )
+            ),
         );
 
         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
         bubbler.register(&r).unwrap();
-        bubbler.add_term(
-            &Term::Node(
+        bubbler
+            .add_term(&Term::Node(
                 BubbleLangOp::Add,
                 vec![Term::Var("x".into()), Term::Var("y".into())],
-            )).unwrap();
+            ))
+            .unwrap();
 
         bubbler.run_rewrites(7).unwrap();
 
-
-        assert!(bubbler.egraph.parse_and_run_program(None,
-            format!("(check (= (Add (Var \"x\") (Var \"y\")) (Add (Var \"y\") (Var \"x\"))))").as_str()).is_ok());
-
-
-
+        assert!(
+            bubbler
+                .egraph
+                .parse_and_run_program(
+                    None,
+                    format!(
+                        "(check (= (Add (Var \"x\") (Var \"y\")) (Add (Var \"y\") (Var \"x\"))))"
+                    )
+                    .as_str()
+                )
+                .is_ok()
+        );
     }
-
 }
