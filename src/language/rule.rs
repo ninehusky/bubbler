@@ -8,7 +8,7 @@ use crate::{
 };
 use egglog::{CommandOutput, EGraph, util::IndexMap};
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct Rewrite<L: Language> {
     pub cond: Option<Term<L>>,
     pub lhs: Term<L>,
@@ -16,6 +16,8 @@ pub struct Rewrite<L: Language> {
 }
 
 impl<L: Language> Rewrite<L> {
+    // NOTE: do not make another constructor for this that is _not_ generalized,
+    // without a very good, very documented reason.
     pub fn new(cond: Option<Term<L>>, lhs: Term<L>, rhs: Term<L>) -> Self {
         let mut map = HashMap::new();
         let cond = cond.map(|c| {
