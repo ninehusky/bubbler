@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use egglog::EGraph;
 
-use crate::language::implication::Implication;
+use crate::colors::Implication;
 use crate::language::rule::Rewrite;
 use crate::language::sexp::Sexp;
 use crate::language::{CVec, Environment, Language, Term};
@@ -353,7 +353,8 @@ impl<L: Language> Bubbler<L> {
 }
 
 mod tests {
-    use crate::language::BubbleLang;
+    #[allow(unused_imports)]
+    use crate::language::{BubbleLang, BubbleLangOp, Term};
 
     use super::*;
 
