@@ -6,44 +6,44 @@
 //! In particular, we define operations for colored merge and find.
 //! Maybe there are more later. Meh!
 
-use egglog::{
-    ast::{Expr, GenericExpr},
-    CommandOutput, Error, UserDefinedCommand,
-};
+use crate::language::{Language, Term};
 
-/// A colored find command for egglog.
-/// Syntax:
-/// (colored-find color term)
-pub struct ColoredFind {}
-i
-impl UserDefinedCommand for ColoredFind {
-    fn update(
-        &self,
-        egraph: &mut egglog::EGraph,
-        args: &[Expr],
-    ) -> Result<Option<CommandOutput>, Error> {
-        // 1. Parse arguments.
-        if args.len() != 2 {
-            panic!(
-                "Expected exactly 2 arguments to colored-find, got {}",
-                args.len()
-            );
-        }
+/// A condition under which new equalities may hold.
+pub struct Condition<L: Language> {
+    pub term: Term<L>,
+}
 
-        match &args {
-            &[GenericExpr::<String, String>::Lit(_, ref a), sexpr] => {
-                println!("First arg (color): {}", a);
-                println!("Second arg (term): {}", sexpr);
-            }
-        };
+/// A directed implication from one condition to another.
+/// How this relates to equalities: for two conditions `p`, `q`
+/// such that `p -> q`, any terms equal in `q` are also equal in `p`.
+/// Example:
+/// ```text
+/// p: x < y
+/// q: x != y
+/// Observe that p -> q; if x < y, then certainly x != y.
+/// Any equality under `q` also holds under `p`.
+/// The opposite is not true; for example, even though given `p`,
+/// `min(x, y) == x`, this does not necessarily hold under the assumption `q`.
+/// ```
+/// Bi-directional implications always represent equivalences.
+/// If you have a pair of implications `p -> q` and `q -> p`,
+/// you should consider merging `p` and `q` into the same condition.
+pub struct Implication<L: Language> {
+    pub from: Condition<L>,
+    pub to: Condition<L>,
+}
 
-        let term_sexp = match &args[1] {
-            Expr::Sexp(s) => s.clone(),
-            _ => {
-                return Err(Error::UserDefinedCommandError(
-                    "Expected second argument to be a s-expression (term)".into(),
-                ))
-            }
-        };
-    }
+/// A colored DAG structure for managing conditional equivalences.
+/// The nodes in the graph are conditions (colors), and the edges are
+/// `[Implication]`s from one condition to another.
+/// Importantly, the "edges" are directed in the _opposite_ direction
+/// of the logical implication. That is, if `p -> q`, then there is an edge
+/// from `q` to `p`.
+pub struct Lattice<L: Language> {
+    pub root: LatticeNode<L>,
+}
+
+pub struct LatticeNode<L: Language> {
+    condition: Condition<L>,
+    children: Vec<Implication<L>>,
 }
