@@ -10,7 +10,7 @@ use std::{
     str::FromStr,
 };
 
-pub mod implication;
+pub mod analysis;
 pub mod rule;
 pub(crate) mod sexp;
 
@@ -35,15 +35,15 @@ pub enum Term<L: Language> {
     Node(L::Op, Vec<Term<L>>),
 }
 
-pub trait OpTrait {
+pub trait OpTrait: Clone + Debug + PartialEq + Eq {
     fn arity(&self) -> usize;
 
     fn name(&self) -> &'static str;
 }
 
 pub trait Language: Clone + Debug + PartialEq + Eq {
-    type Constant: Clone + Debug + PartialEq + Eq + Hash + Display + FromStr;
-    type Op: Clone + Debug + Display + PartialEq + Eq + Hash + OpTrait + FromStr;
+    type Constant: Clone + Debug + PartialEq + Eq + Hash;
+    type Op: Clone + Debug + Display + PartialEq + Eq + OpTrait;
 
     fn name() -> &'static str;
 
@@ -167,7 +167,7 @@ impl<L: Language> Term<L> {
             ]),
             Term::Const(c) => Sexp::List(vec![
                 Sexp::Atom("Const".to_string()),
-                Sexp::Atom(format!("{}", c)),
+                Sexp::Atom(format!("{:?}", c)),
             ]),
             Term::Node(op, children) => {
                 let mut list = vec![Sexp::Atom(op.name().to_string())];
