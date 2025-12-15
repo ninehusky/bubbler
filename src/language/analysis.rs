@@ -15,7 +15,7 @@ use super::{Language, OpTrait};
 // There's a lot of type fuckery in this file. I have
 // no idea what the hell is going on here LOL
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum MetaOp<BOp, MOp> {
+enum MetaOp<BOp: OpTrait, MOp: OpTrait> {
     Base(BOp),
     Meta(MOp),
 }
@@ -40,7 +40,7 @@ where
     }
 }
 
-impl<BOp, MOp> Display for MetaOp<BOp, MOp> {
+impl<BOp: OpTrait, MOp: OpTrait> Display for MetaOp<BOp, MOp> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MetaOp::Base(_) => write!(f, "BaseOp"),
@@ -57,7 +57,7 @@ enum MetaConstant<BaseC, MetaC> {
 
 trait MetaLanguage: Language {
     type Base: Language;
-    type MetaOp: OpTrait;
+    type MetaOp: OpTrait + Hash;
     type MetaConst: Clone + Debug + PartialEq + Eq + Hash;
 
     fn evaluate_meta_op(

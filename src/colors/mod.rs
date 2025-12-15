@@ -8,14 +8,27 @@
 
 mod graph;
 
+use std::collections::HashMap;
+use std::hash::Hash;
+
 use crate::language::{Language, Term};
 use graph::{Graph, NodeId};
 
 /// A condition under which new equalities may hold.
 /// TODO: Conditions should take terms in a metalanguage that can express arbitrary
 /// abstract conditions, not just terms in the object language.
+#[derive(Clone, PartialEq, Eq)]
 pub struct Condition<L: Language> {
     pub term: Term<L>,
+}
+
+impl<L: Language> Hash for Condition<L>
+where
+    L: Language,
+{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.term.hash(state);
+    }
 }
 
 /// A directed implication from one condition to another.
@@ -50,21 +63,47 @@ pub struct Implication<L: Language> {
 /// and the south-most node representing the condition `top` (true; no assumptions).
 /// It's confusing, I know.
 pub struct Lattice<L: Language> {
-    graph: Graph<Condition<L>>,
+    graph: Graph<LatticeNode<L>>,
     top: NodeId,
     bottom: NodeId,
+    facts: HashMap<Condition<L>, NodeId>,
+}
+
+pub enum LatticeNode<L: Language> {
+    Top,
+    Bottom,
+    Fact(Condition<L>),
 }
 
 impl<L: Language> Lattice<L> {
+    fn fact_node(&mut self, cond: Condition<L>) -> NodeId {
+        if let Some(&id) = self.facts.get(&cond) {
+            id
+        } else {
+            let id = self.graph.add_node(LatticeNode::Fact(cond.clone()));
+            self.facts.insert(cond, id);
+            id
+        }
+    }
+
+    pub fn add_implication(&mut self, imp: Implication<L>) {
+        let to_node = self.fact_node(imp.to);
+        let from_node = self.fact_node(imp.from);
+        self.graph.add_edge(to_node, from_node);
+    }
+
     /// Create a new lattice with just the top and bottom elements.
     pub fn new() -> Self {
         let mut graph = Graph::new();
-        let bottom = graph.add_node(Condition {
-            term: Term::Bool(false),
-        });
-        let top = graph.add_node(Condition {
-            term: Term::Bool(true),
-        });
-        Lattice { graph, top, bottom }
+        let facts = HashMap::new();
+        let bottom = graph.add_node(LatticeNode::Bottom);
+        let top = graph.add_node(LatticeNode::Top);
+        graph.add_edge(top, bottom); // false -> true, so edge from top to bottom
+        Lattice {
+            graph,
+            top,
+            bottom,
+            facts,
+        }
     }
 }

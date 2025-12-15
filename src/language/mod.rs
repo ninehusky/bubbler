@@ -6,7 +6,7 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
-    hash::Hash,
+    hash::{self, Hash},
     str::FromStr,
 };
 
@@ -35,6 +35,36 @@ pub enum Term<L: Language> {
     Node(L::Op, Vec<Term<L>>),
 }
 
+impl<L: Language> Hash for Term<L>
+where
+    L::Op: Hash,
+    L::Constant: Hash,
+{
+    fn hash<H: hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Term::Hole(name) => {
+                state.write_u8(0);
+                name.hash(state);
+            }
+            Term::Var(name) => {
+                state.write_u8(1);
+                name.hash(state);
+            }
+            Term::Const(c) => {
+                state.write_u8(2);
+                c.hash(state);
+            }
+            Term::Node(op, children) => {
+                state.write_u8(3);
+                op.hash(state);
+                for child in children {
+                    child.hash(state);
+                }
+            }
+        }
+    }
+}
+
 pub trait OpTrait: Clone + Debug + PartialEq + Eq {
     fn arity(&self) -> usize;
 
@@ -43,7 +73,7 @@ pub trait OpTrait: Clone + Debug + PartialEq + Eq {
 
 pub trait Language: Clone + Debug + PartialEq + Eq {
     type Constant: Clone + Debug + PartialEq + Eq + Hash;
-    type Op: Clone + Debug + Display + PartialEq + Eq + OpTrait;
+    type Op: Clone + Debug + Display + PartialEq + Eq + OpTrait + Hash;
 
     fn name() -> &'static str;
 
