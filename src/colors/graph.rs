@@ -2,6 +2,7 @@
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct NodeId(usize);
 
+#[allow(dead_code)]
 struct Node<N> {
     data: N,
     edges: Vec<NodeId>,
@@ -11,6 +12,7 @@ pub struct Graph<N> {
     nodes: Vec<Node<N>>,
 }
 
+#[allow(dead_code)]
 impl<N> Graph<N> {
     pub fn new() -> Self {
         Graph { nodes: Vec::new() }

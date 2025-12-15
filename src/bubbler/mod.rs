@@ -353,7 +353,8 @@ impl<L: Language> Bubbler<L> {
 }
 
 mod tests {
-    use crate::language::BubbleLang;
+    #[allow(unused_imports)]
+    use crate::language::{BubbleLang, BubbleLangOp, Term};
 
     use super::*;
 

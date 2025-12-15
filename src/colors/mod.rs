@@ -62,11 +62,18 @@ pub struct Implication<L: Language> {
 /// the north-most node representing the condition `bottom` (false; an error has occurred),
 /// and the south-most node representing the condition `top` (true; no assumptions).
 /// It's confusing, I know.
+#[allow(dead_code)]
 pub struct Lattice<L: Language> {
     graph: Graph<LatticeNode<L>>,
     top: NodeId,
     bottom: NodeId,
     facts: HashMap<Condition<L>, NodeId>,
+}
+
+impl<L: Language> Default for Lattice<L> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub enum LatticeNode<L: Language> {

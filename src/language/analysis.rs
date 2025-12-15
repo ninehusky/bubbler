@@ -8,6 +8,7 @@
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::hash::Hash;
+use std::str::FromStr;
 
 use super::CVec;
 use super::{Language, OpTrait};
@@ -15,9 +16,27 @@ use super::{Language, OpTrait};
 // There's a lot of type fuckery in this file. I have
 // no idea what the hell is going on here LOL
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum MetaOp<BOp: OpTrait, MOp: OpTrait> {
+pub enum MetaOp<BOp: OpTrait, MOp: OpTrait> {
     Base(BOp),
     Meta(MOp),
+}
+
+impl<BOp, MOp> FromStr for MetaOp<BOp, MOp>
+where
+    BOp: OpTrait + FromStr,
+    MOp: OpTrait + FromStr,
+{
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Ok(bop) = s.parse::<BOp>() {
+            Ok(MetaOp::Base(bop))
+        } else if let Ok(mop) = s.parse::<MOp>() {
+            Ok(MetaOp::Meta(mop))
+        } else {
+            Err(format!("Failed to parse MetaOp from string: {}", s))
+        }
+    }
 }
 
 impl<BOp, MOp> OpTrait for MetaOp<BOp, MOp>
@@ -50,15 +69,34 @@ impl<BOp: OpTrait, MOp: OpTrait> Display for MetaOp<BOp, MOp> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-enum MetaConstant<BaseC, MetaC> {
+pub enum MetaConstant<BaseC, MetaC> {
     Base(BaseC),
     Meta(MetaC),
 }
 
-trait MetaLanguage: Language {
+impl<BaseC, MetaC> FromStr for MetaConstant<BaseC, MetaC>
+where
+    BaseC: FromStr,
+    MetaC: FromStr,
+{
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // try to parse it as a base constant first.
+        if let Ok(bc) = s.parse::<BaseC>() {
+            Ok(MetaConstant::Base(bc))
+        } else if let Ok(mc) = s.parse::<MetaC>() {
+            Ok(MetaConstant::Meta(mc))
+        } else {
+            Err(format!("Failed to parse MetaConstant from string: {}", s))
+        }
+    }
+}
+
+pub trait MetaLanguage: Language {
     type Base: Language;
-    type MetaOp: OpTrait + Hash;
-    type MetaConst: Clone + Debug + PartialEq + Eq + Hash;
+    type MetaOp: OpTrait + Hash + FromStr;
+    type MetaConst: Clone + Debug + PartialEq + Eq + Hash + FromStr;
 
     fn evaluate_meta_op(
         op: &Self::MetaOp,
@@ -96,12 +134,10 @@ where
     }
 
     fn interesting_constants() -> Vec<Self::Constant> {
-        let consts = <L::Base as Language>::interesting_constants()
+        <L::Base as Language>::interesting_constants()
             .into_iter()
             .map(MetaConstant::Base)
-            .collect::<Vec<_>>();
-
-        consts
+            .collect::<Vec<_>>()
     }
 
     fn evaluate_op(op: &Self::Op, child_vecs: &[CVec<Self>]) -> CVec<Self> {
@@ -125,10 +161,7 @@ where
                     .collect();
                 L::Base::evaluate_op(bop, &base_child_vecs)
                     .iter()
-                    .map(|base_c| match base_c {
-                        Some(bc) => Some(MetaConstant::Base(bc.clone())),
-                        None => None,
-                    })
+                    .map(|base_c| base_c.as_ref().map(|bc| MetaConstant::Base(bc.clone())))
                     .collect()
             }
             MetaOp::Meta(mop) => L::evaluate_meta_op(mop, child_vecs),
