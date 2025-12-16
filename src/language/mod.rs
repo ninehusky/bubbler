@@ -233,11 +233,11 @@ mod lang_tests {
         use BubbleLangOp::*;
 
         // Correct arity
-        let ok = Term::<BubbleLang>::make_node(Add, vec![Term::Const(1), Term::Const(2)]);
+        let ok = Term::<BubbleLang>::make_call(Add, vec![Term::Const(1), Term::Const(2)]);
         assert!(ok.is_ok());
 
         // Wrong arity
-        let fail = Term::<BubbleLang>::make_node(Add, vec![Term::Const(1)]);
+        let fail = Term::<BubbleLang>::make_call(Add, vec![Term::Const(1)]);
         assert!(fail.is_err());
     }
 }

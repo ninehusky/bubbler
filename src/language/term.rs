@@ -1,6 +1,6 @@
 use std::{fmt::Display, hash::Hash, str::FromStr};
 
-use super::{CVec, Constant, Environment, Language, OpTrait, sexp::Sexp};
+use super::{sexp::Sexp, CVec, Constant, Environment, Language, OpTrait};
 use egglog::prelude::{RustSpan, Span};
 use egglog::{ast::Expr, call, lit, var};
 
@@ -12,7 +12,7 @@ pub enum Term<L: Language> {
     Hole(String),
     Var(String),
     Const(Constant<L>),
-    Node(L::Op, Vec<Term<L>>),
+    Call(L::Op, Vec<Term<L>>),
 }
 
 impl<L: Language> Hash for Term<L>
@@ -34,7 +34,7 @@ where
                 state.write_u8(2);
                 c.hash(state);
             }
-            Term::Node(op, children) => {
+            Term::Call(op, children) => {
                 state.write_u8(3);
                 op.hash(state);
                 for child in children {
@@ -58,7 +58,7 @@ impl<L: Language> From<Term<L>> for egglog::ast::Expr {
                 let c: egglog::ast::Literal = c.into().into();
                 lit!(c)
             }
-            Term::Node(op, children) => {
+            Term::Call(op, children) => {
                 let child_exprs: Vec<Expr> =
                     children.into_iter().map(|c| c.clone().into()).collect();
                 call!(op.name().to_string(), child_exprs)
@@ -123,7 +123,7 @@ impl<L: Language> Term<L> {
                         _ => {
                             let op = L::Op::from_str(op_name)
                                 .map_err(|_| format!("Failed to parse operator {}", op_name))?;
-                            Term::make_node(op, children)
+                            Term::make_call(op, children)
                         }
                     }
                 } else {
@@ -144,7 +144,7 @@ impl<L: Language> Term<L> {
                 Sexp::Atom("Const".to_string()),
                 Sexp::Atom(format!("{:?}", c)),
             ]),
-            Term::Node(op, children) => {
+            Term::Call(op, children) => {
                 let mut list = vec![Sexp::Atom(op.name().to_string())];
                 for child in children {
                     list.push(child.to_sexp());
@@ -154,7 +154,7 @@ impl<L: Language> Term<L> {
         }
     }
 
-    pub fn make_node(op: L::Op, children: Vec<Term<L>>) -> Result<Self, String> {
+    pub fn make_call(op: L::Op, children: Vec<Term<L>>) -> Result<Self, String> {
         if children.len() != op.arity() {
             return Err(format!(
                 "Operator {} expects {} children, got {}",
@@ -163,12 +163,12 @@ impl<L: Language> Term<L> {
                 children.len()
             ));
         }
-        Ok(Term::Node(op, children))
+        Ok(Term::Call(op, children))
     }
 
     pub fn children(&self) -> &[Term<L>] {
         match self {
-            Term::Node(_, children) => children,
+            Term::Call(_, children) => children,
             _ => &[],
         }
     }
@@ -178,7 +178,7 @@ impl<L: Language> Term<L> {
             Term::Hole(_) => false,
             Term::Var(_) => true,
             Term::Const(_) => true,
-            Term::Node(_, children) => children.iter().all(|c| c.is_concrete()),
+            Term::Call(_, children) => children.iter().all(|c| c.is_concrete()),
         }
     }
 
@@ -193,7 +193,7 @@ impl<L: Language> Term<L> {
     /// use bubbler::language::BubbleLangOp;
     /// use std::collections::HashMap;
     ///
-    /// let x_plus_1 = Term::<BubbleLang>::make_node(
+    /// let x_plus_1 = Term::<BubbleLang>::make_call(
     ///   BubbleLangOp::Add,
     ///   vec![
     ///       Term::Var("x".to_string()),
@@ -227,12 +227,12 @@ impl<L: Language> Term<L> {
                 }
             }
             Term::Const(c) => Ok(Term::Const(c.clone())),
-            Term::Node(op, children) => {
+            Term::Call(op, children) => {
                 println!("op: {}", op);
                 println!("children: {:?}", children);
                 let gen_children: Result<Vec<Term<L>>, String> =
                     children.iter().map(|c| c.generalize(cache)).collect();
-                Ok(Term::Node(op.clone(), gen_children?))
+                Ok(Term::Call(op.clone(), gen_children?))
             }
         }
     }
@@ -250,10 +250,10 @@ impl<L: Language> Term<L> {
                 name
             )),
             Term::Const(c) => Ok(Term::Const(c.clone())),
-            Term::Node(op, children) => {
+            Term::Call(op, children) => {
                 let conc_children: Result<Vec<Term<L>>, String> =
                     children.iter().map(|c| c.concretize()).collect();
-                Ok(Term::Node(op.clone(), conc_children?))
+                Ok(Term::Call(op.clone(), conc_children?))
             }
         }
     }
@@ -262,15 +262,10 @@ impl<L: Language> Term<L> {
     pub fn evaluate(&self, env: &Environment<L>) -> CVec<L> {
         match self {
             Term::Const(c) => {
-                // Broadcast constant across the CVec length
                 vec![Some(c.clone()); env.values().next().map_or(1, |v| v.len())]
             }
-            Term::Var(v) => {
-                println!("v: {}", v);
-                println!("env keys: {:?}", env.keys());
-                env.get(v).cloned().unwrap().into_iter().map(Some).collect()
-            }
-            Term::Node(op, children) => {
+            Term::Var(v) => env.get(v).cloned().unwrap().into_iter().map(Some).collect(),
+            Term::Call(op, children) => {
                 let child_vecs: Vec<_> = children.iter().map(|c| c.evaluate(env)).collect();
                 L::evaluate_op(op, &child_vecs)
             }

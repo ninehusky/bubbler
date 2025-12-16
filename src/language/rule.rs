@@ -3,10 +3,10 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use super::{CVec, Language};
 use crate::{
     bubbler::{Bubbler, CVecCache, GET_CVEC_FN},
-    language::{Term, sexp::Sexp},
+    language::{sexp::Sexp, Term},
     run_prog,
 };
-use egglog::{CommandOutput, EGraph, util::IndexMap};
+use egglog::{util::IndexMap, CommandOutput, EGraph};
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct Rewrite<L: Language> {
@@ -177,7 +177,7 @@ mod cvec_match_tests {
     pub fn cvec_match_ok() {
         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
         bubbler
-            .add_term(&Term::Node(
+            .add_term(&Term::Call(
                 BubbleLangOp::Add,
                 vec![Term::Const(0), Term::Var("x".into())],
             ))

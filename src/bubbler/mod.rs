@@ -414,11 +414,11 @@ mod tests {
     fn egglogify_transforms_vars_to_holes() {
         let r: Rewrite<BubbleLang> = Rewrite::new(
             None,
-            Term::Node(
+            Term::Call(
                 BubbleLangOp::Add,
                 vec![Term::Var("x".into()), Term::Const(1)],
             ),
-            Term::Node(
+            Term::Call(
                 BubbleLangOp::Add,
                 vec![Term::Const(1), Term::Var("x".into())],
             ),
@@ -439,11 +439,11 @@ mod tests {
     fn conditional_rewrite() {
         // x / x ~> 1 if x != 0
         let r: Rewrite<BubbleLang> = Rewrite::new(
-            Some(Term::Node(
+            Some(Term::Call(
                 BubbleLangOp::Neq,
                 vec![Term::Var("x".into()), Term::Const(0)],
             )),
-            Term::Node(
+            Term::Call(
                 BubbleLangOp::Div,
                 vec![Term::Var("x".into()), Term::Var("x".into())],
             ),
@@ -454,14 +454,14 @@ mod tests {
         bubbler.register(&r).unwrap();
 
         bubbler
-            .add_condition(&Term::Node(
+            .add_condition(&Term::Call(
                 BubbleLangOp::Neq,
                 vec![Term::Var("x".into()), Term::Const(0)],
             ))
             .unwrap();
 
         bubbler
-            .add_term(&Term::Node(
+            .add_term(&Term::Call(
                 BubbleLangOp::Div,
                 vec![Term::Var("x".into()), Term::Var("x".into())],
             ))
@@ -477,11 +477,11 @@ mod tests {
     fn total_rewrite() {
         let r: Rewrite<BubbleLang> = Rewrite::new(
             None,
-            Term::Node(
+            Term::Call(
                 BubbleLangOp::Add,
                 vec![Term::Var("x".into()), Term::Var("y".into())],
             ),
-            Term::Node(
+            Term::Call(
                 BubbleLangOp::Add,
                 vec![Term::Var("y".into()), Term::Var("x".into())],
             ),
@@ -490,7 +490,7 @@ mod tests {
         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
         bubbler.register(&r).unwrap();
         bubbler
-            .add_term(&Term::Node(
+            .add_term(&Term::Call(
                 BubbleLangOp::Add,
                 vec![Term::Var("x".into()), Term::Var("y".into())],
             ))
