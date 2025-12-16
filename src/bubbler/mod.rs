@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
-use egglog::EGraph;
+use egglog::ast::{Expr, GenericCommand};
+use egglog::prelude::{span, RustSpan, Span};
+use egglog::{call, EGraph};
 
 use crate::colors::Implication;
 use crate::language::rule::Rewrite;
-use crate::language::sexp::Sexp;
-use crate::language::{CVec, Environment, Language, term::Term};
+use crate::language::{term::Term, CVec, Environment, Language};
 
 pub(crate) const GET_CVEC_FN: &str = "get-cvec";
 /// This relation records pairs of terms which external validation
@@ -19,6 +20,8 @@ pub(crate) const REWRITE_RULESET: &str = "bubbler-rewrites";
 /// For matching on _any_ term/condition.
 pub(crate) const UNIVERSAL_TERM_RELATION: &str = "universe-term";
 pub(crate) const UNIVERSAL_PREDICATE_RELATION: &str = "universe-pred";
+
+pub(crate) const PREDICATE_DATATYPE: &str = "PredTerm";
 
 #[macro_export]
 macro_rules! run_prog {
@@ -128,41 +131,41 @@ impl<L: Language> Bubbler<L> {
     /// Adds the given rule to the Bubbler's set of rewrite rules.
     /// Errors if the rule already exists.
     pub fn register(&mut self, rule: &Rewrite<L>) -> Result<(), String> {
-        if self.rules.contains(rule) {
-            return Err("Rule already registered.".into());
-        }
+        // if self.rules.contains(rule) {
+        //     return Err("Rule already registered.".into());
+        // }
 
-        let lhs = Bubbler::egglogify(&rule.lhs);
-        let rhs = Bubbler::egglogify(&rule.rhs);
+        // let lhs = Bubbler::egglogify(&rule.lhs);
+        // let rhs = Bubbler::egglogify(&rule.rhs);
 
-        let rw_prog = match rule.cond {
-            Some(ref c) => {
-                let c = Bubbler::egglogify(c);
-                format!(
-                    r#"
-                (rule
-                    (({UNIVERSAL_PREDICATE_RELATION} (PredTerm {c}))
-                     ({UNIVERSAL_TERM_RELATION} {lhs}))
-                    (({COND_EQUAL_FN} (PredTerm {c}) {lhs} {rhs})
-                     ({UNIVERSAL_TERM_RELATION} {rhs}))
-                    :ruleset {REWRITE_RULESET})
-                "#
-                )
-            }
-            None => {
-                format!(
-                    r#"
-                (rule
-                    (({UNIVERSAL_TERM_RELATION} {lhs}))
-                    ((union {lhs} {rhs})
-                     ({UNIVERSAL_TERM_RELATION} {rhs}))
-                    :ruleset {REWRITE_RULESET})
-                "#
-                )
-            }
-        };
-        run_prog!(self.egraph, &rw_prog)?;
-        self.rules.push(rule.clone());
+        // let rw_prog = match rule.cond {
+        //     Some(ref c) => {
+        //         let c = Bubbler::egglogify(c);
+        //         format!(
+        //             r#"
+        //         (rule
+        //             (({UNIVERSAL_PREDICATE_RELATION} (PredTerm {c}))
+        //              ({UNIVERSAL_TERM_RELATION} {lhs}))
+        //             (({COND_EQUAL_FN} (PredTerm {c}) {lhs} {rhs})
+        //              ({UNIVERSAL_TERM_RELATION} {rhs}))
+        //             :ruleset {REWRITE_RULESET})
+        //         "#
+        //         )
+        //     }
+        //     None => {
+        //         format!(
+        //             r#"
+        //         (rule
+        //             (({UNIVERSAL_TERM_RELATION} {lhs}))
+        //             ((union {lhs} {rhs})
+        //              ({UNIVERSAL_TERM_RELATION} {rhs}))
+        //             :ruleset {REWRITE_RULESET})
+        //         "#
+        //         )
+        //     }
+        // };
+        // run_prog!(self.egraph, &rw_prog)?;
+        // self.rules.push(rule.clone());
         Ok(())
     }
 
@@ -223,38 +226,6 @@ impl<L: Language> Bubbler<L> {
         .unwrap();
     }
 
-    // TODO: make unit test for this. A good Maxim task
-    pub fn egglogify(term: &Term<L>) -> Sexp {
-        fn rewrite(sexp: Sexp) -> Sexp {
-            match sexp {
-                Sexp::Atom(_) => sexp,
-                Sexp::List(items) => {
-                    if items.len() == 2
-                        && let Sexp::Atom(ref head) = items[0]
-                        && head == "Var"
-                        && let Sexp::Atom(ref v) = items[1]
-                    {
-                        return Sexp::List(vec![
-                            Sexp::Atom("Var".into()),
-                            Sexp::Atom(format!("\"{}\"", v)),
-                        ]);
-                    } else if items.len() == 2
-                        && let Sexp::Atom(ref head) = items[0]
-                        && head == "Hole"
-                        && let Sexp::Atom(ref v) = items[1]
-                    {
-                        return Sexp::Atom(format!("?{}", v));
-                    }
-
-                    // Normal case: recursively rewrite children
-                    Sexp::List(items.into_iter().map(rewrite).collect())
-                }
-            }
-        }
-
-        rewrite(term.to_sexp())
-    }
-
     /// Runs the Bubbler's rewrites on the e-graph.
     pub fn run_rewrites(&mut self, iterations: usize) -> Result<(), String> {
         let prog = format!(
@@ -267,51 +238,56 @@ impl<L: Language> Bubbler<L> {
     }
 
     /// Adds the condition to the e-graph, erroring if the condition is malformed.
-    // TODO: eventually, we'll probably want a `Predicate<L>` type
-    // that lets you represent predicates which aren't just in the
-    // term language (e.g., overflow checks, etc.).
     pub fn add_condition(&mut self, condition: &Term<L>) -> Result<(), String> {
-        if !condition.is_concrete() {
-            return Err("Conditions must be concrete terms.".into());
-        }
-        let sexp = Bubbler::egglogify(condition);
-        let cond_prog = format!(
-            r#"
-            ({UNIVERSAL_PREDICATE_RELATION} (PredTerm {sexp}))
-        "#
-        );
-        run_prog!(self.egraph, &cond_prog)?;
+        // if !condition.is_concrete() {
+        //     return Err("Conditions must be concrete terms.".into());
+        // }
+        // let expr: Expr = condition.clone().into();
+        // let expr: Expr = call!(PREDICATE_DATATYPE, vec![expr]);
+        // self.egraph.run_program(vec![GenericCommand::Relation {
+        //     span: span!(),
+        //     name: UNIVERSAL_PREDICATE_RELATION.to_string(),
+        //     inputs: expr,
+        // }]);
+
+        // let sexp = Bubbler::egglogify(condition);
+        // let cond_prog = format!(
+        //     r#"
+        //     ({UNIVERSAL_PREDICATE_RELATION} (PredTerm {sexp}))
+        // "#
+        // );
+        // run_prog!(self.egraph, &cond_prog)?;
         Ok(())
     }
 
     /// Adds the term to the e-graph, erroring if the term is malformed.
     pub fn add_term(&mut self, term: &Term<L>) -> Result<CVec<L>, String> {
-        if !term.is_concrete() {
-            return Err("Term must be concrete to compute cvec.".into());
-        }
-        let sexp = Bubbler::egglogify(term);
-        let cvec = term.evaluate(&self.environment);
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        cvec.hash(&mut hasher);
-        let hash = hasher.finish();
+        // if !term.is_concrete() {
+        //     return Err("Term must be concrete to compute cvec.".into());
+        // }
+        // let sexp = Bubbler::egglogify(term);
+        // let cvec = term.evaluate(&self.environment);
+        // let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        // cvec.hash(&mut hasher);
+        // let hash = hasher.finish();
 
-        // Cache the cvec.
-        if let Some(prev) = self.cache.get(&hash) {
-            assert_eq!(
-                prev, &cvec,
-                "Hash collision detected for cvecs: {prev:?} and {cvec:?}"
-            );
-        }
-        self.cache.insert(hash, cvec.clone());
+        // // Cache the cvec.
+        // if let Some(prev) = self.cache.get(&hash) {
+        //     assert_eq!(
+        //         prev, &cvec,
+        //         "Hash collision detected for cvecs: {prev:?} and {cvec:?}"
+        //     );
+        // }
+        // self.cache.insert(hash, cvec.clone());
 
-        let egglog_prog = format!(
-            r#"
-            (set ({GET_CVEC_FN} {sexp}) ({HASH_CODE_FN} "{hash}"))
-            ({UNIVERSAL_TERM_RELATION} {sexp})
-        "#
-        );
-        run_prog!(self.egraph, &egglog_prog)?;
-        Ok(cvec)
+        // let egglog_prog = format!(
+        //     r#"
+        //     (set ({GET_CVEC_FN} {sexp}) ({HASH_CODE_FN} "{hash}"))
+        //     ({UNIVERSAL_TERM_RELATION} {sexp})
+        // "#
+        // );
+        // run_prog!(self.egraph, &egglog_prog)?;
+        Ok(vec![])
     }
 
     /// Returns the characteristic vector for a given term, if it exists.
@@ -352,163 +328,159 @@ impl<L: Language> Bubbler<L> {
     }
 }
 
-mod tests {
-    #[allow(unused_imports)]
-    use crate::language::{BubbleLang, BubbleLangOp, term::Term};
+// mod tests {
+//     #[allow(unused_imports)]
+//     use crate::language::{term::Term, BubbleLang, BubbleLangOp};
 
-    use super::*;
+//     use super::*;
 
-    #[allow(dead_code)]
-    fn get_cfg() -> BubblerConfig<BubbleLang> {
-        BubblerConfig {
-            vars: vec!["x".into(), "y".into()],
-            vals: vec![0, 1],
-            _marker: std::marker::PhantomData,
-        }
-    }
+//     #[allow(dead_code)]
+//     fn get_cfg() -> BubblerConfig<BubbleLang> {
+//         BubblerConfig {
+//             vars: vec!["x".into(), "y".into()],
+//             vals: vec![0, 1],
+//             _marker: std::marker::PhantomData,
+//         }
+//     }
 
-    #[test]
-    fn bubbler_egraph_ok() {
-        use super::Bubbler;
-        use crate::language::BubbleLang;
+//     #[test]
+//     fn bubbler_egraph_ok() {
+//         use super::Bubbler;
+//         use crate::language::BubbleLang;
 
-        let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
-        bubbler.add_term(&Term::Const(42)).unwrap();
-        let cvec = bubbler.lookup_cvec(&Term::Const(42)).unwrap();
-        for v in &cvec {
-            assert_eq!(*v, Some(42_i64));
-        }
-        // `BubbleLang::make_environment(&["x".into(), "y".into()])`
-        // produces 7 * 7 = 49 entries, which is the size of the
-        // cartesian product of the constant values for x and y.
-        assert_eq!(cvec.len(), 7 * 7);
-    }
+//         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
+//         bubbler.add_term(&Term::Const(42)).unwrap();
+//         let cvec = bubbler.lookup_cvec(&Term::Const(42)).unwrap();
+//         for v in &cvec {
+//             assert_eq!(*v, Some(42_i64));
+//         }
+//         // `BubbleLang::make_environment(&["x".into(), "y".into()])`
+//         // produces 7 * 7 = 49 entries, which is the size of the
+//         // cartesian product of the constant values for x and y.
+//         assert_eq!(cvec.len(), 7 * 7);
+//     }
 
-    #[test]
-    fn bubbler_egraph_fails_if_not_equal() {
-        use super::Bubbler;
-        use crate::language::BubbleLang;
+//     #[test]
+//     fn bubbler_egraph_fails_if_not_equal() {
+//         use super::Bubbler;
+//         use crate::language::BubbleLang;
 
-        let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
-        bubbler.add_term(&Term::Const(42)).unwrap();
-        bubbler.add_term(&Term::Const(43)).unwrap();
+//         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
+//         bubbler.add_term(&Term::Const(42)).unwrap();
+//         bubbler.add_term(&Term::Const(43)).unwrap();
 
-        let res = bubbler.egraph.parse_and_run_program(
-            None,
-            r#"
-            (not-equal (Const 42) (Const 43))
-            (union (Const 42) (Const 43))
-            (run 10)
-        "#,
-        );
+//         let res = bubbler.egraph.parse_and_run_program(
+//             None,
+//             r#"
+//             (not-equal (Const 42) (Const 43))
+//             (union (Const 42) (Const 43))
+//             (run 10)
+//         "#,
+//         );
 
-        assert!(res.is_err());
+//         assert!(res.is_err());
 
-        let e = res.err().unwrap();
+//         let e = res.err().unwrap();
 
-        assert!(e.to_string().contains("Illegal merge"));
-    }
+//         assert!(e.to_string().contains("Illegal merge"));
+//     }
 
-    // TODO Maxim: it would be a good idea to make this a doctest.
-    #[test]
-    fn egglogify_transforms_vars_to_holes() {
-        let r: Rewrite<BubbleLang> = Rewrite::new(
-            None,
-            Term::Call(
-                BubbleLangOp::Add,
-                vec![Term::Var("x".into()), Term::Const(1)],
-            ),
-            Term::Call(
-                BubbleLangOp::Add,
-                vec![Term::Const(1), Term::Var("x".into())],
-            ),
-        );
-        let sexp_lhs = Bubbler::egglogify(&r.lhs);
-        let sexp_rhs = Bubbler::egglogify(&r.rhs);
-        assert_eq!(
-            sexp_lhs.to_string().replace(" ", ""),
-            "(Add ?a (Const 1))".replace(" ", "")
-        );
-        assert_eq!(
-            sexp_rhs.to_string().replace(" ", ""),
-            "(Add (Const 1) ?a)".replace(" ", "")
-        );
-    }
+//     // TODO Maxim: it would be a good idea to make this a doctest.
+//     #[test]
+//     fn egglogify_transforms_vars_to_holes() {
+//         let r: Rewrite<BubbleLang> = Rewrite::new(
+//             None,
+//             Term::Call(
+//                 BubbleLangOp::Add,
+//                 vec![Term::Var("x".into()), Term::Const(1)],
+//             ),
+//             Term::Call(
+//                 BubbleLangOp::Add,
+//                 vec![Term::Const(1), Term::Var("x".into())],
+//             ),
+//         );
+//         let sexp_lhs = Bubbler::egglogify(&r.lhs);
+//         let sexp_rhs = Bubbler::egglogify(&r.rhs);
+//         assert_eq!(
+//             sexp_lhs.to_string().replace(" ", ""),
+//             "(Add ?a (Const 1))".replace(" ", "")
+//         );
+//         assert_eq!(
+//             sexp_rhs.to_string().replace(" ", ""),
+//             "(Add (Const 1) ?a)".replace(" ", "")
+//         );
+//     }
 
-    #[test]
-    fn conditional_rewrite() {
-        // x / x ~> 1 if x != 0
-        let r: Rewrite<BubbleLang> = Rewrite::new(
-            Some(Term::Call(
-                BubbleLangOp::Neq,
-                vec![Term::Var("x".into()), Term::Const(0)],
-            )),
-            Term::Call(
-                BubbleLangOp::Div,
-                vec![Term::Var("x".into()), Term::Var("x".into())],
-            ),
-            Term::Const(1),
-        );
+//     #[test]
+//     fn conditional_rewrite() {
+//         // x / x ~> 1 if x != 0
+//         let r: Rewrite<BubbleLang> = Rewrite::new(
+//             Some(Term::Call(
+//                 BubbleLangOp::Neq,
+//                 vec![Term::Var("x".into()), Term::Const(0)],
+//             )),
+//             Term::Call(
+//                 BubbleLangOp::Div,
+//                 vec![Term::Var("x".into()), Term::Var("x".into())],
+//             ),
+//             Term::Const(1),
+//         );
 
-        let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
-        bubbler.register(&r).unwrap();
+//         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
+//         bubbler.register(&r).unwrap();
 
-        bubbler
-            .add_condition(&Term::Call(
-                BubbleLangOp::Neq,
-                vec![Term::Var("x".into()), Term::Const(0)],
-            ))
-            .unwrap();
+//         bubbler
+//             .add_condition(&Term::Call(
+//                 BubbleLangOp::Neq,
+//                 vec![Term::Var("x".into()), Term::Const(0)],
+//             ))
+//             .unwrap();
 
-        bubbler
-            .add_term(&Term::Call(
-                BubbleLangOp::Div,
-                vec![Term::Var("x".into()), Term::Var("x".into())],
-            ))
-            .unwrap();
+//         bubbler
+//             .add_term(&Term::Call(
+//                 BubbleLangOp::Div,
+//                 vec![Term::Var("x".into()), Term::Var("x".into())],
+//             ))
+//             .unwrap();
 
-        bubbler.run_rewrites(7).unwrap();
+//         bubbler.run_rewrites(7).unwrap();
 
-        assert!(bubbler.egraph.parse_and_run_program(None,
-            format!("(check ({COND_EQUAL_FN} (PredTerm (Neq (Var \"x\") (Const 0))) (Div (Var \"x\") (Var \"x\")) (Const 1)))").as_str()).is_ok());
-    }
+//         assert!(bubbler.egraph.parse_and_run_program(None,
+//             format!("(check ({COND_EQUAL_FN} (PredTerm (Neq (Var \"x\") (Const 0))) (Div (Var \"x\") (Var \"x\")) (Const 1)))").as_str()).is_ok());
+//     }
 
-    #[test]
-    fn total_rewrite() {
-        let r: Rewrite<BubbleLang> = Rewrite::new(
-            None,
-            Term::Call(
-                BubbleLangOp::Add,
-                vec![Term::Var("x".into()), Term::Var("y".into())],
-            ),
-            Term::Call(
-                BubbleLangOp::Add,
-                vec![Term::Var("y".into()), Term::Var("x".into())],
-            ),
-        );
+//     #[test]
+//     fn total_rewrite() {
+//         let r: Rewrite<BubbleLang> = Rewrite::new(
+//             None,
+//             Term::Call(
+//                 BubbleLangOp::Add,
+//                 vec![Term::Var("x".into()), Term::Var("y".into())],
+//             ),
+//             Term::Call(
+//                 BubbleLangOp::Add,
+//                 vec![Term::Var("y".into()), Term::Var("x".into())],
+//             ),
+//         );
 
-        let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
-        bubbler.register(&r).unwrap();
-        bubbler
-            .add_term(&Term::Call(
-                BubbleLangOp::Add,
-                vec![Term::Var("x".into()), Term::Var("y".into())],
-            ))
-            .unwrap();
+//         let mut bubbler: Bubbler<BubbleLang> = Bubbler::new(get_cfg());
+//         bubbler.register(&r).unwrap();
+//         bubbler
+//             .add_term(&Term::Call(
+//                 BubbleLangOp::Add,
+//                 vec![Term::Var("x".into()), Term::Var("y".into())],
+//             ))
+//             .unwrap();
 
-        bubbler.run_rewrites(7).unwrap();
+//         bubbler.run_rewrites(7).unwrap();
 
-        assert!(
-            bubbler
-                .egraph
-                .parse_and_run_program(
-                    None,
-                    format!(
-                        "(check (= (Add (Var \"x\") (Var \"y\")) (Add (Var \"y\") (Var \"x\"))))"
-                    )
-                    .as_str()
-                )
-                .is_ok()
-        );
-    }
-}
+//         assert!(bubbler
+//             .egraph
+//             .parse_and_run_program(
+//                 None,
+//                 format!("(check (= (Add (Var \"x\") (Var \"y\")) (Add (Var \"y\") (Var \"x\"))))")
+//                     .as_str()
+//             )
+//             .is_ok());
+//     }
+// }

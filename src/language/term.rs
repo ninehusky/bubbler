@@ -45,28 +45,6 @@ where
     }
 }
 
-impl<L: Language> From<Term<L>> for egglog::ast::Expr {
-    fn from(term: Term<L>) -> Self {
-        match term {
-            Term::Hole(name) => {
-                assert!(name.starts_with('?'), "A hole must start with '?'.");
-                var!(name)
-            }
-            Term::Var(name) => var!(name),
-            Term::Const(c) => {
-                // match on the type of a constant.
-                let c: egglog::ast::Literal = c.into().into();
-                lit!(c)
-            }
-            Term::Call(op, children) => {
-                let child_exprs: Vec<Expr> =
-                    children.into_iter().map(|c| c.clone().into()).collect();
-                call!(op.name().to_string(), child_exprs)
-            }
-        }
-    }
-}
-
 impl<L: Language> Term<L> {
     pub fn from_sexp(sexp: &Sexp) -> Result<Term<L>, String> {
         match sexp {
