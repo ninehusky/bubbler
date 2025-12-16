@@ -76,6 +76,7 @@ impl<L: Language> Default for Lattice<L> {
     }
 }
 
+#[derive(Clone, PartialEq, Eq)]
 pub enum LatticeNode<L: Language> {
     Top,
     Bottom,
