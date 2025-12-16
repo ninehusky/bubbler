@@ -3,17 +3,21 @@
 pub struct NodeId(usize);
 
 #[allow(dead_code)]
+#[derive(Clone, PartialEq, Eq)]
 struct Node<N> {
     data: N,
     edges: Vec<NodeId>,
 }
 
-pub struct Graph<N> {
+pub struct Graph<N: PartialEq + Eq> {
     nodes: Vec<Node<N>>,
 }
 
 #[allow(dead_code)]
-impl<N> Graph<N> {
+impl<N> Graph<N>
+where
+    N: PartialEq + Eq,
+{
     pub fn new() -> Self {
         Graph { nodes: Vec::new() }
     }
@@ -26,6 +30,18 @@ impl<N> Graph<N> {
         });
 
         id
+    }
+    pub fn find_node(&self, data: N) -> Option<NodeId> {
+        for (i, node) in self.nodes.iter().enumerate() {
+            if node.data == data {
+                return Some(NodeId(i));
+            }
+        }
+        None
+    }
+
+    pub fn has_edge(&self, from: NodeId, to: NodeId) -> bool {
+        self.nodes[from.0].edges.iter().any(|&x| x == to)
     }
 
     pub fn add_edge(&mut self, from: NodeId, to: NodeId) {
