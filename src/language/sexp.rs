@@ -1,13 +1,36 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use egglog::ast::Expr;
+use egglog::prelude::{RustSpan, Span};
+use egglog::span;
+
 /// S-expressions.
 /// Lovingly stolen from Enumo's implementation: https://github.com/uwplse/ruler/blob/main/src/enumo/sexp.rs
 /// Mwahahaha! Take that, UW!
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Sexp {
     Atom(String),
     List(Vec<Self>),
+}
+
+impl Into<Expr> for Sexp {
+    fn into(self) -> Expr {
+        match self {
+            Sexp::Atom(s) => {
+                // we're going to assume that literals are i64s.
+                if let Some(ival) = s.parse::<i64>().ok() {
+                    Expr::Lit(egglog::span!(), egglog::ast::Literal::Int(ival))
+                } else {
+                    Expr::Var(span!(), s)
+                }
+            }
+            Sexp::List(l) => {
+                let exprs: Vec<Expr> = l.into_iter().map(|s| s.into()).collect();
+                Expr::Call(span!(), exprs[0].clone().to_string(), exprs[1..].to_vec())
+            }
+        }
+    }
 }
 
 impl FromStr for Sexp {
