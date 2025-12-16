@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use egglog::ast::Expr;
 use egglog::prelude::{RustSpan, Span};
-use egglog::span;
+use egglog::{call, lit, var};
 
 /// S-expressions.
 /// Lovingly stolen from Enumo's implementation: https://github.com/uwplse/ruler/blob/main/src/enumo/sexp.rs
@@ -18,16 +18,21 @@ impl Into<Expr> for Sexp {
     fn into(self) -> Expr {
         match self {
             Sexp::Atom(s) => {
-                // we're going to assume that literals are i64s.
                 if let Some(ival) = s.parse::<i64>().ok() {
-                    Expr::Lit(egglog::span!(), egglog::ast::Literal::Int(ival))
+                    lit!(ival)
                 } else {
-                    Expr::Var(span!(), s)
+                    var!(s)
                 }
             }
             Sexp::List(l) => {
-                let exprs: Vec<Expr> = l.into_iter().map(|s| s.into()).collect();
-                Expr::Call(span!(), exprs[0].clone().to_string(), exprs[1..].to_vec())
+                let exprs: Vec<Expr> = l[1..].into_iter().map(|s| s.clone().into()).collect();
+                let Sexp::Atom(s) = &l[0] else {
+                    panic!(
+                        "Expected atom at head of S-expression list, but found {:?}",
+                        &l[0]
+                    );
+                };
+                call!(s, exprs)
             }
         }
     }
@@ -153,6 +158,18 @@ mod test {
         ];
         for (expr, size) in exprs {
             assert_eq!(expr.parse::<Sexp>().unwrap().size(), size);
+        }
+    }
+
+    #[test]
+    fn test_egglog_lowering() {
+        let sexp: Sexp = "?x".parse().unwrap();
+        let expr: Expr = sexp.clone().into();
+        // match on the not-span part of the expr.
+        if let Expr::Var(_, name) = expr {
+            assert_eq!(name, "?x");
+        } else {
+            panic!("Expected Expr::Var");
         }
     }
 }

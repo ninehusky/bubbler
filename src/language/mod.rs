@@ -10,11 +10,20 @@ use std::{
     str::FromStr,
 };
 
+use egglog::{
+    ast::Expr,
+    call, lit,
+    prelude::{RustSpan, Span},
+    var,
+};
+
+use constant::BubbleConstant;
+use sexp::Sexp;
+
 pub mod analysis;
+pub mod constant;
 pub mod rule;
 pub(crate) mod sexp;
-
-use sexp::Sexp;
 
 /// A characteristic vector.
 pub type CVec<L> = Vec<Option<<L as Language>::Constant>>;
@@ -72,7 +81,7 @@ pub trait OpTrait: Clone + Debug + PartialEq + Eq {
 }
 
 pub trait Language: Clone + Debug + PartialEq + Eq {
-    type Constant: Clone + Debug + PartialEq + Eq + Hash + FromStr;
+    type Constant: Clone + Debug + PartialEq + Eq + Hash + FromStr + Into<BubbleConstant>;
     type Op: Clone + Debug + Display + PartialEq + Eq + OpTrait + Hash + FromStr;
 
     fn name() -> &'static str;
@@ -120,6 +129,28 @@ pub trait Language: Clone + Debug + PartialEq + Eq {
     }
 
     fn evaluate_op(op: &Self::Op, child_vecs: &[CVec<Self>]) -> CVec<Self>;
+}
+
+impl<L: Language> From<Term<L>> for egglog::ast::Expr {
+    fn from(term: Term<L>) -> Self {
+        match term {
+            Term::Hole(name) => {
+                assert!(name.starts_with('?'), "A hole must start with '?'.");
+                var!(name)
+            }
+            Term::Var(name) => var!(name),
+            Term::Const(c) => {
+                // match on the type of a constant.
+                let c: egglog::ast::Literal = c.into().into();
+                lit!(c)
+            }
+            Term::Node(op, children) => {
+                let child_exprs: Vec<Expr> =
+                    children.into_iter().map(|c| c.clone().into()).collect();
+                call!(op.name().to_string(), child_exprs)
+            }
+        }
+    }
 }
 
 impl<L: Language> Term<L> {
@@ -238,6 +269,7 @@ impl<L: Language> Term<L> {
     }
 
     /// Generalize variables in this term into metavariables ?a, ?b, etc.
+    /// That is, "x + y" becomes "?a + ?b".
     /// Errors if the term already contains a Hole.
     /// Panics if there are more than 26 variables to generalize.
     /// But if you get that far, there are bigger things to worry about.
@@ -291,6 +323,7 @@ impl<L: Language> Term<L> {
         }
     }
 
+    /// Given a term with holes, concretize it by replacing holes with variables.
     pub fn concretize(&self) -> Result<Self, String> {
         match self {
             Term::Hole(name) => {
@@ -480,6 +513,7 @@ pub fn self_product<T: Clone>(ts: &[T], n: usize) -> Vec<Vec<T>> {
 #[cfg(test)]
 mod lang_tests {
     use super::*;
+    use BubbleLangOp::*;
 
     #[test]
     fn test_arity() {

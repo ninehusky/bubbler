@@ -10,6 +10,7 @@ use std::fmt::Display;
 use std::hash::Hash;
 use std::str::FromStr;
 
+use super::BubbleConstant;
 use super::CVec;
 use super::{Language, OpTrait};
 
@@ -74,6 +75,19 @@ pub enum MetaConstant<BaseC, MetaC> {
     Meta(MetaC),
 }
 
+impl<BaseC, MetaC> From<MetaConstant<BaseC, MetaC>> for BubbleConstant
+where
+    BaseC: Into<BubbleConstant>,
+    MetaC: Into<BubbleConstant>,
+{
+    fn from(c: MetaConstant<BaseC, MetaC>) -> Self {
+        match c {
+            MetaConstant::Base(b) => b.into(),
+            MetaConstant::Meta(m) => m.into(),
+        }
+    }
+}
+
 impl<BaseC, MetaC> FromStr for MetaConstant<BaseC, MetaC>
 where
     BaseC: FromStr,
@@ -96,7 +110,7 @@ where
 pub trait MetaLanguage: Language {
     type Base: Language;
     type MetaOp: OpTrait + Hash + FromStr;
-    type MetaConst: Clone + Debug + PartialEq + Eq + Hash + FromStr;
+    type MetaConst: Clone + Debug + PartialEq + Eq + Hash + FromStr + Into<BubbleConstant>;
 
     fn evaluate_meta_op(
         op: &Self::MetaOp,
