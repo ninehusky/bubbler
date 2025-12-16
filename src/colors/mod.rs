@@ -11,7 +11,7 @@ mod graph;
 use std::collections::HashMap;
 use std::hash::Hash;
 
-use crate::language::{term::Term, Language};
+use crate::language::{Language, term::Term};
 use graph::{Graph, NodeId};
 
 /// A condition under which new equalities may hold.

@@ -10,7 +10,6 @@ use std::{
     str::FromStr,
 };
 
-
 use constant::BubbleConstant;
 use term::Term;
 
