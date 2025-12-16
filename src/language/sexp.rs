@@ -14,18 +14,18 @@ pub enum Sexp {
     List(Vec<Self>),
 }
 
-impl Into<Expr> for Sexp {
-    fn into(self) -> Expr {
-        match self {
+impl From<Sexp> for Expr {
+    fn from(val: Sexp) -> Self {
+        match val {
             Sexp::Atom(s) => {
-                if let Some(ival) = s.parse::<i64>().ok() {
+                if let Ok(ival) = s.parse::<i64>() {
                     lit!(ival)
                 } else {
                     var!(s)
                 }
             }
             Sexp::List(l) => {
-                let exprs: Vec<Expr> = l[1..].into_iter().map(|s| s.clone().into()).collect();
+                let exprs: Vec<Expr> = l[1..].iter().map(|s| s.clone().into()).collect();
                 let Sexp::Atom(s) = &l[0] else {
                     panic!(
                         "Expected atom at head of S-expression list, but found {:?}",

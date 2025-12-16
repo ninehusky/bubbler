@@ -1,4 +1,11 @@
 /// The types that can be used as your constants for bubbler.
+/// These map directly to the types of literals supported in Egglog.
+/// "Constant" is kind of a misnomer here, because one can imagine
+/// e.g. a bitvector DSL which uses a `(Bitvector i64 i64)` value
+/// as its base constant type. But whatever. You'll get over it.
+// TODO: see how bad it would be to do stuff like having a
+// union type here.
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum BubbleConstant {
     Int(i64),

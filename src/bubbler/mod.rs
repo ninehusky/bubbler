@@ -6,7 +6,7 @@ use egglog::EGraph;
 use crate::colors::Implication;
 use crate::language::rule::Rewrite;
 use crate::language::sexp::Sexp;
-use crate::language::{CVec, Environment, Language, Term};
+use crate::language::{CVec, Environment, Language, term::Term};
 
 pub(crate) const GET_CVEC_FN: &str = "get-cvec";
 /// This relation records pairs of terms which external validation
@@ -354,7 +354,7 @@ impl<L: Language> Bubbler<L> {
 
 mod tests {
     #[allow(unused_imports)]
-    use crate::language::{BubbleLang, BubbleLangOp, Term};
+    use crate::language::{BubbleLang, BubbleLangOp, term::Term};
 
     use super::*;
 
