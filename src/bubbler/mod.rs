@@ -23,6 +23,8 @@ pub(crate) const UNIVERSAL_PREDICATE_RELATION: &str = "universe-pred";
 
 pub(crate) const PREDICATE_DATATYPE: &str = "PredTerm";
 
+mod backend;
+
 #[macro_export]
 macro_rules! run_prog {
     ($egraph:expr, $prog:expr) => {{

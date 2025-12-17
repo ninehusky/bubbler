@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, fmt::Display, str::FromStr, sync::Arc};
 
 use super::{CVec, Language};
 use crate::{
@@ -19,6 +19,12 @@ pub enum Rewrite<L: Language> {
         lhs: Term<L>,
         rhs: Term<L>,
     },
+}
+
+impl<L: Language> Display for Rewrite<L> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
 }
 
 impl<L: Language> Rewrite<L> {
