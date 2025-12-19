@@ -10,7 +10,7 @@ use egglog::{
     span, var, EGraph,
 };
 
-use crate::language::{analysis::MetaLanguage, rule::Rewrite, term::Term, Language, OpTrait};
+use crate::language::{rule::Rewrite, term::Term, Language, OpTrait};
 
 // A bunch of variables for storing names of relations/datatypes used in egglog programs.
 pub(crate) mod bubbler_defns {
@@ -32,12 +32,12 @@ pub(crate) mod bubbler_defns {
     pub const BASE_TERM: &str = "BaseTerm";
 }
 
-pub struct EgglogBackend<L: MetaLanguage> {
+pub struct EgglogBackend<L: Language> {
     egraph: EGraph,
-    _lang: std::marker::PhantomData<L>,
+    _marker: std::marker::PhantomData<L>,
 }
 
-impl<L: MetaLanguage> EgglogBackend<L> {
+impl<L: Language> EgglogBackend<L> {
     pub fn new() -> Self {
         let mut egraph = EGraph::default();
         add_ruleset(&mut egraph, bubbler_defns::REWRITE_TERMS_RULESET)
@@ -45,19 +45,19 @@ impl<L: MetaLanguage> EgglogBackend<L> {
             .unwrap();
         Self {
             egraph,
-            _lang: std::marker::PhantomData,
+            _marker: std::marker::PhantomData,
         }
     }
 
     fn setup_egraph(&mut self) -> Result<(), String> {
         // 1. Register the base language's syntax as a datatype.
-        let variants: Vec<_> = L::Base::ops()
+        let variants: Vec<_> = L::ops()
             .iter()
             .map(|op| Variant {
                 span: span!(),
                 name: op.name().to_string(),
                 // TODO: is it `op.arity() + 1`?
-                types: { vec![L::Base::name().to_string(); op.arity()] },
+                types: { vec![L::name().to_string(); op.arity()] },
                 cost: None,
                 unextractable: false,
             })
@@ -66,29 +66,21 @@ impl<L: MetaLanguage> EgglogBackend<L> {
         self.egraph
             .run_program(vec![GenericCommand::Datatype {
                 span: span!(),
-                name: L::Base::name().to_string(),
+                name: L::name().to_string(),
                 variants,
             }])
             .map_err(|_| "Failed to register base language datatype.".to_string())?;
 
         // 2. Register the metalanguage's syntax as a datatype.
-        let mut variants: Vec<_> = L::meta_ops()
-            .iter()
-            .map(|op| Variant {
-                span: span!(),
-                name: op.name().to_string(),
-                types: { vec![L::name().to_string(); op.arity()] },
-                cost: None,
-                unextractable: false,
-            })
-            .collect();
+        // Here, the metalanguage can only be a `(Predicate e)` wrapper around
+        // some term `e` in the base language. We can think about how to
+        // augment this to be an arbitrary AST, but it seems unnecessary for now.
+        let mut variants = vec![];
 
-        // Here, we special-case the regular language's terms here too:
-        // `(datatype MetaLanguage ... (BaseTerm L::name()))`
         variants.push(Variant {
             span: span!(),
             name: bubbler_defns::BASE_TERM.to_string(),
-            types: vec![L::Base::name().to_string()],
+            types: vec![L::name().to_string()],
             cost: None,
             unextractable: false,
         });
@@ -96,7 +88,7 @@ impl<L: MetaLanguage> EgglogBackend<L> {
         self.egraph
             .run_program(vec![GenericCommand::Datatype {
                 span: span!(),
-                name: L::name().to_string(),
+                name: bubbler_defns::PREDICATE_DATATYPE.to_string(),
                 variants,
             }])
             .map_err(|_| "Failed to register metalanguage datatype.".to_string())?;
@@ -114,11 +106,13 @@ impl<L: MetaLanguage> EgglogBackend<L> {
             .run_program(vec![GenericCommand::Rule {
                 rule: GenericRule {
                     span: span!(),
+                    // union the LHS and RHS when...
                     head: GenericActions(vec![GenericAction::Union(
                         span!(),
                         lhs.clone().into(),
                         rhs.clone().into(),
                     )]),
+                    // ...we can see that the LHS is in the egraph.
                     body: vec![GenericFact::Fact(lhs.clone().into())],
                     name: format!("{}", rule),
                     ruleset: bubbler_defns::REWRITE_TERMS_RULESET.to_string(),
@@ -138,11 +132,13 @@ impl<L: MetaLanguage> EgglogBackend<L> {
                     span: span!(),
                     head: GenericActions(vec![GenericAction::Expr(
                         span!(),
+                        // mark the LHS and RHS as conditionally equal under cond if...
                         call!(
                             bubbler_defns::COND_EQUAL_RELATION.to_string(),
                             vec![cond.clone().into(), lhs.clone().into(), rhs.clone().into()]
                         ),
                     )]),
+                    // ...we can see that the LHS is in the egraph.
                     body: vec![GenericFact::Fact(lhs.clone().into())],
                     name: format!("{}", rule),
                     ruleset: bubbler_defns::REWRITE_TERMS_RULESET.to_string(),
@@ -151,10 +147,10 @@ impl<L: MetaLanguage> EgglogBackend<L> {
             .map_or(Err("Failed to register rewrite.".to_string()), |_| Ok(()))
     }
 
-    // TODO: we may want to have register_set which takes a `RewriteSet<L>` and batch-adds them.
-    // I really, really doubt that this will be a performance bottleneck, though. Also, such a
-    // function is at odds with the one-by-one registration that's described in the Ruler/Chompy sphere of papers.
     pub fn register(&mut self, rule: &Rewrite<L>) -> Result<(), String> {
+        // TODO: we may want to have register_set which takes a `RewriteSet<L>` and batch-adds them.
+        // I really, really doubt that this will be a performance bottleneck, though. Also, such a
+        // function is at odds with the one-by-one registration that's described in the Ruler/Chompy sphere of papers.
         match rule {
             Rewrite::Unconditional { .. } => self.register_unconditional_rewrite(rule),
             Rewrite::Conditional { .. } => self.register_conditional_rewrite(rule),

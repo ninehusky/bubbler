@@ -13,7 +13,6 @@ use std::{
 use constant::BubbleConstant;
 use term::Term;
 
-pub mod analysis;
 pub mod constant;
 pub mod rule;
 pub(crate) mod sexp;
