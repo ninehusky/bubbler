@@ -36,12 +36,16 @@ pub trait OpTrait: Clone + Debug + PartialEq + Eq {
 }
 
 pub trait Language: Clone + Debug + PartialEq + Eq {
-    type Constant: Clone + Debug + PartialEq + Eq + Hash + FromStr + Into<BubbleConstant>;
+    type Constant: Clone + Debug + PartialEq + Eq + Hash + FromStr;
     type Op: Clone + Debug + Display + PartialEq + Eq + OpTrait + Hash + FromStr;
 
     fn name() -> &'static str;
 
     fn interesting_constants() -> Vec<Self::Constant>;
+
+    fn constant_from_bubble(b: BubbleConstant) -> Self::Constant;
+
+    fn constant_to_bubble(c: &Self::Constant) -> BubbleConstant;
 
     fn make_environment(vars: &[String]) -> Environment<Self> {
         let vals: Vec<Self::Constant> = Self::interesting_constants().into_iter().collect();
@@ -61,26 +65,7 @@ pub trait Language: Clone + Debug + PartialEq + Eq {
 
     /// Default Egglog source generation
     fn to_egglog_src() -> String {
-        let mut s = format!("(datatype {}\n", Self::name());
-        // Add Var and Const constructors
-        s.push_str(format!("    (Const {})\n", std::any::type_name::<Self::Constant>()).as_str());
-        s.push_str("    (Var String)\n");
-        for op in Self::ops() {
-            assert!(
-                op.to_string() != "Var" && op.to_string() != "Const",
-                "Operators cannot be named 'Var' or 'Const'."
-            );
-            let mut op_str = format!("    ({}", op.name());
-            for _ in 0..op.arity() {
-                op_str.push(' ');
-                op_str.push_str(Self::name());
-            }
-            op_str.push(')');
-            s.push_str(&op_str);
-            s.push('\n');
-        }
-        s.push(')');
-        s
+        panic!("Don't call this anymore.");
     }
 
     fn evaluate_op(op: &Self::Op, child_vecs: &[CVec<Self>]) -> CVec<Self>;
@@ -138,6 +123,17 @@ impl Language for BubbleLang {
             BubbleLangOp::Neq,
             BubbleLangOp::Div,
         ]
+    }
+
+    fn constant_from_bubble(b: BubbleConstant) -> Self::Constant {
+        match b {
+            BubbleConstant::Int(i) => i,
+            _ => panic!("Expected BubbleConstant::Int"),
+        }
+    }
+
+    fn constant_to_bubble(c: &Self::Constant) -> BubbleConstant {
+        BubbleConstant::Int(*c)
     }
 
     fn interesting_constants() -> Vec<Self::Constant> {

@@ -85,6 +85,17 @@ impl Language for LLVMLang {
         "LLVMLang"
     }
 
+    fn constant_from_bubble(b: BubbleConstant) -> Self::Constant {
+        match b {
+            BubbleConstant::Int(i) => i,
+            _ => panic!("Expected integer constant for LLVMLang"),
+        }
+    }
+
+    fn constant_to_bubble(c: &Self::Constant) -> BubbleConstant {
+        BubbleConstant::Int(*c)
+    }
+
     fn interesting_constants() -> Vec<Self::Constant> {
         vec![-10, -1, 0, 1, 2, 5, 100]
     }

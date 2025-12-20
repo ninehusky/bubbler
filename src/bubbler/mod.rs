@@ -21,8 +21,6 @@ pub(crate) const REWRITE_RULESET: &str = "bubbler-rewrites";
 pub(crate) const UNIVERSAL_TERM_RELATION: &str = "universe-term";
 pub(crate) const UNIVERSAL_PREDICATE_RELATION: &str = "universe-pred";
 
-pub(crate) const PREDICATE_DATATYPE: &str = "PredTerm";
-
 mod backend;
 
 #[macro_export]

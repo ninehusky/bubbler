@@ -23,7 +23,20 @@ pub enum Rewrite<L: Language> {
 
 impl<L: Language> Display for Rewrite<L> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match self {
+            Rewrite::Conditional { cond, lhs, rhs } => {
+                write!(
+                    f,
+                    "if {} then {} ~> {}",
+                    cond.to_sexp(),
+                    lhs.to_sexp(),
+                    rhs.to_sexp()
+                )
+            }
+            Rewrite::Unconditional { lhs, rhs } => {
+                write!(f, "{} ~> {}", lhs.to_sexp(), rhs.to_sexp())
+            }
+        }
     }
 }
 

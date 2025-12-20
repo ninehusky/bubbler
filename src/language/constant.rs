@@ -5,12 +5,24 @@
 /// as its base constant type. But whatever. You'll get over it.
 // TODO: see how bad it would be to do stuff like having a
 // union type here.
+use egglog::ast::Literal;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
 pub enum BubbleConstant {
     Int(i64),
     String(String),
     Bool(bool),
+}
+
+impl From<Literal> for BubbleConstant {
+    fn from(lit: Literal) -> Self {
+        match lit {
+            egglog::ast::Literal::Int(i) => BubbleConstant::Int(i),
+            egglog::ast::Literal::String(s) => BubbleConstant::String(s),
+            egglog::ast::Literal::Bool(b) => BubbleConstant::Bool(b),
+            _ => panic!("Unsupported literal type for BubbleConstant"),
+        }
+    }
 }
 
 impl From<BubbleConstant> for egglog::ast::Literal {
