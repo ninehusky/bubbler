@@ -14,6 +14,16 @@ pub enum BubbleConstant {
     Bool(bool),
 }
 
+impl BubbleConstant {
+    pub fn to_bool(&self) -> bool {
+        match self {
+            BubbleConstant::Int(i) => *i != 0,
+            BubbleConstant::Bool(b) => *b,
+            _ => panic!("It doesn't make sense to convert this type to string."),
+        }
+    }
+}
+
 impl From<Literal> for BubbleConstant {
     fn from(lit: Literal) -> Self {
         match lit {
