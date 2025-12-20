@@ -190,7 +190,7 @@ impl<L: Language> EgglogBackend<L> {
     }
 
     /// Returns a mapping from CVecs to terms in the egraph with those CVecs.
-    fn get_cvec_map(&mut self) -> HashMap<CVec<L>, Vec<Term<L>>> {
+    fn cvec_match(&mut self) -> HashMap<CVec<L>, Vec<Term<L>>> {
         let result = self
             .egraph
             .run_program(vec![GenericCommand::PrintFunction(
@@ -604,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn get_cvec_map_ok() {
+    fn cvec_match_ok() {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         // Add a term with a CVec.
         let cvec: CVec<LLVMLang> = vec![Some(1), Some(2), None];
@@ -627,7 +627,7 @@ mod tests {
             .add_term(two_plus_one.clone(), Some(cvec.clone()))
             .unwrap();
 
-        let cvec_map = backend.get_cvec_map();
+        let cvec_map = backend.cvec_match();
         assert_eq!(cvec_map.len(), 1);
         let terms = cvec_map.get(&cvec).unwrap();
         assert_eq!(terms.len(), 2);
