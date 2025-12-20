@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
+use backend::EgglogBackend;
 use egglog::ast::{Expr, GenericCommand};
 use egglog::prelude::{span, RustSpan, Span};
 use egglog::{call, EGraph};
@@ -103,6 +104,7 @@ impl<L: Language> CVecCache<L> {
 
 /// The Bubbler struct, which manages a core Bubbler e-graph.
 pub struct Bubbler<L: Language> {
+    pub backend: EgglogBackend<L>,
     pub egraph: EGraph,
     pub environment: Environment<L>,
     pub cache: CVecCache<L>,
@@ -115,7 +117,8 @@ impl<L: Language> Bubbler<L> {
     pub fn new(cfg: BubblerConfig<L>) -> Self {
         let egraph = EGraph::default();
         let environment = L::make_environment(&cfg.vars);
-        let mut bubbler = Self {
+        let bubbler = Self {
+            backend: EgglogBackend::<L>::new(),
             egraph,
             environment,
             cache: CVecCache::<L>::new(),
@@ -124,106 +127,13 @@ impl<L: Language> Bubbler<L> {
             schedule: BubblerSchedule::default(),
         };
 
-        bubbler.initialize_egraph();
         bubbler
     }
 
     /// Adds the given rule to the Bubbler's set of rewrite rules.
     /// Errors if the rule already exists.
     pub fn register(&mut self, rule: &Rewrite<L>) -> Result<(), String> {
-        // if self.rules.contains(rule) {
-        //     return Err("Rule already registered.".into());
-        // }
-
-        // let lhs = Bubbler::egglogify(&rule.lhs);
-        // let rhs = Bubbler::egglogify(&rule.rhs);
-
-        // let rw_prog = match rule.cond {
-        //     Some(ref c) => {
-        //         let c = Bubbler::egglogify(c);
-        //         format!(
-        //             r#"
-        //         (rule
-        //             (({UNIVERSAL_PREDICATE_RELATION} (PredTerm {c}))
-        //              ({UNIVERSAL_TERM_RELATION} {lhs}))
-        //             (({COND_EQUAL_FN} (PredTerm {c}) {lhs} {rhs})
-        //              ({UNIVERSAL_TERM_RELATION} {rhs}))
-        //             :ruleset {REWRITE_RULESET})
-        //         "#
-        //         )
-        //     }
-        //     None => {
-        //         format!(
-        //             r#"
-        //         (rule
-        //             (({UNIVERSAL_TERM_RELATION} {lhs}))
-        //             ((union {lhs} {rhs})
-        //              ({UNIVERSAL_TERM_RELATION} {rhs}))
-        //             :ruleset {REWRITE_RULESET})
-        //         "#
-        //         )
-        //     }
-        // };
-        // run_prog!(self.egraph, &rw_prog)?;
-        // self.rules.push(rule.clone());
-        Ok(())
-    }
-
-    /// Given a blank e-graph for some language L, populate it with the
-    /// necessary machinery to do Bubbler.
-    /// This includes:
-    /// - The datatype definition for L.
-    /// - The datatype definition for cvecs.
-    fn initialize_egraph(&mut self) {
-        run_prog!(self.egraph, &L::to_egglog_src()).unwrap();
-        let name = L::name();
-        run_prog!(
-            self.egraph,
-            format!(
-                r#"
-(datatype Predicate
-    (PredTerm {name}))
-(datatype cvec ({HASH_CODE_FN} String))
-
-;;; A relation that associates terms with their characteristic vectors.
-;;; If two things are merged, then their cvecs must be the same.
-(function {GET_CVEC_FN} ({name}) cvec :no-merge)
-
-;;; If Bubbler discovers that two terms are not equal (through
-;;; validation), then we record that information here.
-(relation {NOT_EQUAL_FN} ({name} {name}))
-
-;;; Represents if under predicate `p`, `l` == `r`.
-(relation {COND_EQUAL_FN} (Predicate {name} {name}))
-
-;;; Universal relation that matches any term.
-(relation {UNIVERSAL_TERM_RELATION} ({name}))
-
-;;; Universal relation that matches any predicate.
-(relation {UNIVERSAL_PREDICATE_RELATION} (Predicate))
-
-;;; these are the axioms for conditional equality
-(ruleset {INVARIANT_RULESET})
-
-(ruleset {REWRITE_RULESET})
-
-;;; symmetry of conditional equality
-(rule
-    (({COND_EQUAL_FN} (PredTerm ?p) ?l ?r))
-    (({COND_EQUAL_FN} (PredTerm ?p) ?r ?l))
-    :ruleset {INVARIANT_RULESET})
-
-;;; transitivity of conditional equality
-(rule
-    (({COND_EQUAL_FN} (PredTerm ?p) ?l ?m)
-    ({COND_EQUAL_FN} (PredTerm ?p) ?m ?r))
-    (({COND_EQUAL_FN} (PredTerm ?p) ?l ?r))
-    :ruleset {INVARIANT_RULESET})
-"#
-            )
-            .as_str()
-        )
-        .unwrap();
+        self.backend.register(rule)
     }
 
     /// Runs the Bubbler's rewrites on the e-graph.
@@ -262,32 +172,9 @@ impl<L: Language> Bubbler<L> {
 
     /// Adds the term to the e-graph, erroring if the term is malformed.
     pub fn add_term(&mut self, term: &Term<L>) -> Result<CVec<L>, String> {
-        // if !term.is_concrete() {
-        //     return Err("Term must be concrete to compute cvec.".into());
-        // }
-        // let sexp = Bubbler::egglogify(term);
-        // let cvec = term.evaluate(&self.environment);
-        // let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // cvec.hash(&mut hasher);
-        // let hash = hasher.finish();
-
-        // // Cache the cvec.
-        // if let Some(prev) = self.cache.get(&hash) {
-        //     assert_eq!(
-        //         prev, &cvec,
-        //         "Hash collision detected for cvecs: {prev:?} and {cvec:?}"
-        //     );
-        // }
-        // self.cache.insert(hash, cvec.clone());
-
-        // let egglog_prog = format!(
-        //     r#"
-        //     (set ({GET_CVEC_FN} {sexp}) ({HASH_CODE_FN} "{hash}"))
-        //     ({UNIVERSAL_TERM_RELATION} {sexp})
-        // "#
-        // );
-        // run_prog!(self.egraph, &egglog_prog)?;
-        Ok(vec![])
+        let cvec = term.evaluate(&self.environment);
+        self.backend.add_term(term.clone(), Some(cvec.clone()))?;
+        Ok(cvec)
     }
 
     /// Returns the characteristic vector for a given term, if it exists.

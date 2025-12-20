@@ -6,6 +6,19 @@ use egglog::{ast::Expr, call, lit, var};
 
 use std::collections::HashMap;
 
+/// The AST nodes of a Predicate Language.
+// NOTE(@ninehusky): I'm still unsure how this should get structured.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PredicateTerm<L: Language> {
+    pub term: Term<L>,
+}
+
+impl<L: Language> PredicateTerm<L> {
+    pub fn from_term(term: Term<L>) -> Self {
+        Self { term }
+    }
+}
+
 /// The AST nodes of a [`Language`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Term<L: Language> {

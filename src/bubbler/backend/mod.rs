@@ -17,7 +17,10 @@ use egglog::{
 use intern::InternStore;
 
 use crate::language::{
-    constant::BubbleConstant, rule::Rewrite, term::Term, CVec, Language, OpTrait, PVec,
+    constant::BubbleConstant,
+    rule::Rewrite,
+    term::{PredicateTerm, Term},
+    CVec, Language, OpTrait, PVec,
 };
 
 mod intern;
@@ -34,8 +37,13 @@ pub(crate) mod bubbler_defns {
     pub const HAS_CVEC_RELATION: &str = "has-cvec";
     pub const HAS_PVEC_RELATION: &str = "has-pvec";
     pub const COND_EQUAL_RELATION: &str = "cond-equal";
-    pub const UNIVERSE_TERM_RELATION: &str = "universe-term";
-    pub const UNIVERSE_META_RELATION: &str = "universe-meta";
+
+    // NOTE(@ninehusky): I'm commenting these out for now. We need these for rewrites
+    // like "for all terms in the universe, do X", but I can't really think of
+    // a reason why you'd want to do such a thing in general, let alone in
+    // an e-graph. See #21 for more discussion.
+    // pub const UNIVERSE_TERM_RELATION: &str = "universe-term";
+    // pub const UNIVERSE_META_RELATION: &str = "universe-meta";
 
     // Datatypes
     pub const PREDICATE_DATATYPE: &str = "Predicate";
@@ -190,7 +198,7 @@ impl<L: Language> EgglogBackend<L> {
     }
 
     /// Returns a mapping from CVecs to terms in the egraph with those CVecs.
-    fn cvec_match(&mut self) -> HashMap<CVec<L>, Vec<Term<L>>> {
+    fn get_cvec_map(&mut self) -> HashMap<CVec<L>, Vec<Term<L>>> {
         let result = self
             .egraph
             .run_program(vec![GenericCommand::PrintFunction(
@@ -236,8 +244,58 @@ impl<L: Language> EgglogBackend<L> {
     }
 
     /// Returns a mapping from PVecs to terms in the egraph with those PVecs.
-    fn get_pvec_map(&mut self) -> HashMap<PVec, Vec<Term<L>>> {
-        todo!()
+    fn get_pvec_map(&mut self) -> HashMap<PVec, Vec<PredicateTerm<L>>> {
+        let result = self
+            .egraph
+            .run_program(vec![GenericCommand::PrintFunction(
+                span!(),
+                bubbler_defns::HAS_PVEC_RELATION.to_string(),
+                None,
+                None,
+                egglog::ast::PrintFunctionMode::Default,
+            )])
+            .unwrap();
+
+        let CommandOutput::PrintFunction(_, termdag, terms_and_outputs, _) = &result[0] else {
+            panic!("Expected PrintFunctionOutput.");
+        };
+
+        let mut res: HashMap<PVec, Vec<PredicateTerm<L>>> = HashMap::new();
+
+        for (term, _) in terms_and_outputs {
+            let expr: egglog::ast::Expr = termdag.term_to_expr(term, span!());
+            match expr {
+                Expr::Call(_, ref op, ref args) if op == &bubbler_defns::HAS_PVEC_RELATION => {
+                    assert_eq!(args.len(), 2);
+                    let term: Term<L> = {
+                        if let Expr::Call(_, base_term_op, base_term_args) = &args[0] {
+                            assert_eq!(base_term_op, &bubbler_defns::BASE_TERM);
+                            assert_eq!(base_term_args.len(), 1);
+                            base_term_args[0].clone().into()
+                        } else {
+                            panic!("Expected BaseTerm call for predicate term.");
+                        }
+                    };
+
+                    let pvec_hash: u64 =
+                        if let Expr::Lit(_, egglog::ast::Literal::String(s)) = &args[1] {
+                            s.parse::<u64>().unwrap()
+                        } else {
+                            panic!("Expected string literal for cvec hash.");
+                        };
+                    let Some(pvec) = self.pvec_store.get(pvec_hash) else {
+                        panic!("PVec hash not found in store.");
+                    };
+
+                    res.entry(pvec.clone())
+                        .or_insert_with(Vec::new)
+                        .push(PredicateTerm::from_term(term));
+                }
+                _ => panic!("Expected has-pvec call."),
+            };
+        }
+
+        res
     }
 
     // Adds the given unconditional rewrite rule to the Bubbler's set of rewrite rules.
@@ -262,7 +320,7 @@ impl<L: Language> EgglogBackend<L> {
                     ruleset: bubbler_defns::REWRITE_TERMS_RULESET.to_string(),
                 },
             }])
-            .map_err(|e| format!("Failed to register rewrite: {:?}", e).to_string());
+            .map_err(|e| format!("Failed to register rewrite: {:?}", e).to_string())?;
 
         Ok(())
     }
@@ -344,17 +402,18 @@ impl<L: Language> EgglogBackend<L> {
         Ok(())
     }
 
-    pub fn add_predicate(&mut self, predicate: Term<L>, pvec: Option<PVec>) -> Result<(), String> {
+    pub fn add_predicate(
+        &mut self,
+        predicate: PredicateTerm<L>,
+        pvec: Option<PVec>,
+    ) -> Result<(), String> {
         let mut commands = vec![];
 
         commands.push(GenericCommand::Action(GenericAction::Expr(
             span!(),
             call!(
-                bubbler_defns::PREDICATE_DATATYPE.to_string(),
-                vec![call!(
-                    bubbler_defns::BASE_TERM.to_string(),
-                    vec![predicate.clone().into()]
-                )]
+                bubbler_defns::BASE_TERM.to_string(),
+                vec![predicate.term.clone().into()]
             ),
         )));
 
@@ -372,11 +431,8 @@ impl<L: Language> EgglogBackend<L> {
                     // So we just store it as a string.
                     vec![
                         call!(
-                            bubbler_defns::PREDICATE_DATATYPE.to_string(),
-                            vec![call!(
-                                bubbler_defns::BASE_TERM.to_string(),
-                                vec![predicate.clone().into()]
-                            )]
+                            bubbler_defns::BASE_TERM.to_string(),
+                            vec![predicate.term.clone().into()]
                         ),
                         lit!(hash.to_string())
                     ]
@@ -549,6 +605,42 @@ mod tests {
     }
 
     #[test]
+    // This test is similar to `add_total_rewrite_ok`, but it rewrites just to ametavariable.
+    // The opposite direction won't work; we can't have `?a ~> ?a + 0`. But such rewrites don't
+    // win you much, I think.
+    fn add_total_rewrite_match_any() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+
+        // ?a + 0 ~> ?a
+        let rewrite = Rewrite::Unconditional {
+            lhs: Term::Call(
+                LLVMLangOp::Add,
+                vec![Term::Hole("?a".into()), Term::Const(0.into())],
+            ),
+            rhs: Term::Hole("?a".into()),
+        };
+
+        backend.register(&rewrite).unwrap();
+
+        // Add a term that matches the LHS of the rewrite.
+        backend.add_term(
+            Term::Call(
+                LLVMLangOp::Add,
+                vec![Term::Var("a".into()), Term::Const(0.into())],
+            ),
+            None,
+        );
+
+        backend.run_rewrites().unwrap();
+
+        // Check that the egraph contains the RHS term, and that it is unioned with the LHS term.
+        backend
+            .egraph
+            .parse_and_run_program(None, "(check (= (Var \"a\") (Add (Var \"a\") (Const 0))) )")
+            .unwrap();
+    }
+
+    #[test]
     fn add_conditional_rewrite_ok() {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         // y / y ~> 1 if y != 0
@@ -604,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn cvec_match_ok() {
+    fn get_cvec_map_ok() {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         // Add a term with a CVec.
         let cvec: CVec<LLVMLang> = vec![Some(1), Some(2), None];
@@ -627,11 +719,43 @@ mod tests {
             .add_term(two_plus_one.clone(), Some(cvec.clone()))
             .unwrap();
 
-        let cvec_map = backend.cvec_match();
+        let cvec_map = backend.get_cvec_map();
         assert_eq!(cvec_map.len(), 1);
         let terms = cvec_map.get(&cvec).unwrap();
         assert_eq!(terms.len(), 2);
         assert!(terms.contains(&one_plus_two));
         assert!(terms.contains(&two_plus_one));
+    }
+
+    #[test]
+    fn get_pvec_map_ok() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+        // Add a predicate with a PVec.
+        let pvec: PVec = vec![true, false, true];
+
+        let predicate_a: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
+            LLVMLangOp::Lt,
+            vec![Term::Var("x".into()), Term::Const(10.into())],
+        ));
+
+        let predicate_b: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
+            LLVMLangOp::Gt,
+            vec![Term::Var("y".into()), Term::Const(5.into())],
+        ));
+
+        backend
+            .add_predicate(predicate_a.clone(), Some(pvec.clone()))
+            .unwrap();
+
+        backend
+            .add_predicate(predicate_b.clone(), Some(pvec.clone()))
+            .unwrap();
+
+        let pvec_map = backend.get_pvec_map();
+        assert_eq!(pvec_map.len(), 1);
+        let terms = pvec_map.get(&pvec).unwrap();
+        assert_eq!(terms.len(), 2);
+        assert!(terms.contains(&predicate_a));
+        assert!(terms.contains(&predicate_b));
     }
 }
