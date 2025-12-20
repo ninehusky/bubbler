@@ -623,13 +623,15 @@ mod tests {
         backend.register(&rewrite).unwrap();
 
         // Add a term that matches the LHS of the rewrite.
-        backend.add_term(
-            Term::Call(
-                LLVMLangOp::Add,
-                vec![Term::Var("a".into()), Term::Const(0.into())],
-            ),
-            None,
-        );
+        backend
+            .add_term(
+                Term::Call(
+                    LLVMLangOp::Add,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                ),
+                None,
+            )
+            .unwrap();
 
         backend.run_rewrites().unwrap();
 
