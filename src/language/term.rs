@@ -1,13 +1,13 @@
 use std::{fmt::Display, hash::Hash, str::FromStr};
 
 use super::{sexp::Sexp, CVec, Constant, Environment, Language, OpTrait};
-use egglog::prelude::{RustSpan, Span};
-use egglog::{ast::Expr, call, lit, var};
 
 use std::collections::HashMap;
 
 /// The AST nodes of a Predicate Language.
 // NOTE(@ninehusky): I'm still unsure how this should get structured.
+// You might imagine later on something like a `Condition<L>`,
+// and then `PredicateTerm<L>` is the AST node for that condition language.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PredicateTerm<L: Language> {
     pub term: Term<L>,
@@ -16,6 +16,16 @@ pub struct PredicateTerm<L: Language> {
 impl<L: Language> PredicateTerm<L> {
     pub fn from_term(term: Term<L>) -> Self {
         Self { term }
+    }
+}
+
+impl<L: Language> Hash for PredicateTerm<L>
+where
+    L::Op: Hash,
+    L::Constant: Hash,
+{
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.term.hash(state);
     }
 }
 
@@ -250,6 +260,11 @@ impl<L: Language> Term<L> {
     }
 
     /// Evaluate a term as a CVec, using a language-specific vectorized evaluator
+    // TODO(@ninehusky): Egg systems get cvec-memoization for free; you get
+    // speedup because you're not evaluating _every_ single term you add to the
+    // e-graph. Bubbler doesn't support this for now, but it shouldn't impact
+    // performance in any meaningful way. Evaluation of terms is not the bottleneck
+    // for these kinds of systems.
     pub fn evaluate(&self, env: &Environment<L>) -> CVec<L> {
         match self {
             Term::Const(c) => {

@@ -14,7 +14,7 @@ use constant::BubbleConstant;
 use term::Term;
 
 pub mod constant;
-pub mod rule;
+pub mod rewrite;
 pub(crate) mod sexp;
 pub mod term;
 

@@ -4,7 +4,7 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use crate::language::{constant::BubbleConstant, CVec, Language, OpTrait};
+use crate::language::{constant::BubbleConstant, Language, OpTrait};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct LLVMLang;

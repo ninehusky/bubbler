@@ -1,13 +1,10 @@
 //! This is an internal module for interfacing with the egglog library.
 
-use std::{
-    collections::HashMap,
-    hash::{Hash, Hasher},
-};
+use std::collections::HashMap;
 
 use egglog::{
     ast::{
-        Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRewrite,
+        Expr, GenericAction, GenericActions, GenericCommand, GenericFact,
         GenericRule, GenericRunConfig, GenericSchedule, Variant,
     },
     call, lit,
@@ -16,11 +13,14 @@ use egglog::{
 };
 use intern::InternStore;
 
-use crate::language::{
-    constant::BubbleConstant,
-    rule::Rewrite,
-    term::{PredicateTerm, Term},
-    CVec, Language, OpTrait, PVec,
+use crate::{
+    colors::implication::Implication,
+    language::{
+        constant::BubbleConstant,
+        rewrite::Rewrite,
+        term::{PredicateTerm, Term},
+        CVec, Language, OpTrait, PVec,
+    },
 };
 
 mod intern;
@@ -62,6 +62,12 @@ pub struct EgglogBackend<L: Language> {
     cvec_store: CVecStore<L>,
     pvec_store: PVecStore,
     _marker: std::marker::PhantomData<L>,
+}
+
+impl<L: Language> Default for EgglogBackend<L> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<L: Language> EgglogBackend<L> {
@@ -219,7 +225,7 @@ impl<L: Language> EgglogBackend<L> {
         for (term, _) in terms_and_outputs {
             let expr: egglog::ast::Expr = termdag.term_to_expr(term, span!());
             match expr {
-                Expr::Call(_, ref op, ref args) if op == &bubbler_defns::HAS_CVEC_RELATION => {
+                Expr::Call(_, ref op, ref args) if op == bubbler_defns::HAS_CVEC_RELATION => {
                     assert_eq!(args.len(), 2);
                     let term_expr: Term<L> = args[0].clone().into();
                     let cvec_hash: u64 =
@@ -233,7 +239,7 @@ impl<L: Language> EgglogBackend<L> {
                     };
 
                     res.entry(cvec.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(term_expr);
                 }
                 _ => panic!("Expected has-cvec call."),
@@ -265,7 +271,7 @@ impl<L: Language> EgglogBackend<L> {
         for (term, _) in terms_and_outputs {
             let expr: egglog::ast::Expr = termdag.term_to_expr(term, span!());
             match expr {
-                Expr::Call(_, ref op, ref args) if op == &bubbler_defns::HAS_PVEC_RELATION => {
+                Expr::Call(_, ref op, ref args) if op == bubbler_defns::HAS_PVEC_RELATION => {
                     assert_eq!(args.len(), 2);
                     let term: Term<L> = {
                         if let Expr::Call(_, base_term_op, base_term_args) = &args[0] {
@@ -288,7 +294,7 @@ impl<L: Language> EgglogBackend<L> {
                     };
 
                     res.entry(pvec.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(PredicateTerm::from_term(term));
                 }
                 _ => panic!("Expected has-pvec call."),
@@ -368,6 +374,10 @@ impl<L: Language> EgglogBackend<L> {
             Rewrite::Unconditional { .. } => self.register_unconditional_rewrite(rule),
             Rewrite::Conditional { .. } => self.register_conditional_rewrite(rule),
         }
+    }
+
+    pub fn register_implication(&mut self, implication: &Implication<L>) -> Result<(), String> {
+        todo!()
     }
 
     pub fn add_term(&mut self, term: Term<L>, cvec: Option<CVec<L>>) -> Result<(), String> {
@@ -485,7 +495,7 @@ impl<L: Language> From<egglog::ast::Expr> for Term<L> {
                     assert_eq!(args.len(), 1);
                     if let egglog::ast::GenericExpr::Lit(_, lit) = &args[0] {
                         let constant: BubbleConstant = lit.clone().into();
-                        Term::Const(L::constant_from_bubble(constant).into())
+                        Term::Const(L::constant_from_bubble(constant))
                     } else {
                         panic!("Expected literal for Const value.");
                     }

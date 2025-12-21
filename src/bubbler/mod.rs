@@ -1,13 +1,13 @@
 use backend::EgglogBackend;
-use egglog::EGraph;
 
-use crate::colors::Implication;
+use crate::colors::implication::Implication;
 use crate::language::constant::BubbleConstant;
-use crate::language::rule::Rewrite;
+use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
 use crate::language::{term::Term, CVec, Environment, Language};
 
 mod backend;
+mod schedule;
 
 pub struct BubblerConfig<L: Language> {
     pub vars: Vec<String>,
@@ -25,52 +25,25 @@ impl<L: Language> BubblerConfig<L> {
     }
 }
 
-pub enum BubblerStep {
-    FindRewrites,
-    FindImplications,
-}
-
-/// One "step" of the Bubbler algorithm.
-pub struct BubblerSchedule {
-    pub steps: Vec<BubblerStep>,
-}
-
-impl Default for BubblerSchedule {
-    fn default() -> Self {
-        // Rewrites first, then implications.
-        Self {
-            steps: vec![BubblerStep::FindRewrites, BubblerStep::FindImplications],
-        }
-    }
-}
-
 /// The Bubbler struct, which manages a core Bubbler e-graph.
 pub struct Bubbler<L: Language> {
     pub backend: EgglogBackend<L>,
     pub environment: Environment<L>,
     pub rules: Vec<Rewrite<L>>,
     pub implications: Vec<Implication<L>>,
-    pub schedule: BubblerSchedule,
 }
 
 impl<L: Language> Bubbler<L> {
     pub fn new(cfg: BubblerConfig<L>) -> Self {
         let environment = L::make_environment(&cfg.vars);
-        let bubbler = Self {
+        
+
+        Self {
             backend: EgglogBackend::<L>::new(),
             environment,
             rules: vec![],
             implications: vec![],
-            schedule: BubblerSchedule::default(),
-        };
-
-        bubbler
-    }
-
-    /// Adds the given rule to the Bubbler's set of rewrite rules.
-    /// Errors if the rule already exists.
-    pub fn register(&mut self, rule: &Rewrite<L>) -> Result<(), String> {
-        self.backend.register(rule)
+        }
     }
 
     /// Adds the predicate to the e-graph. If `add_pvec` is true, the

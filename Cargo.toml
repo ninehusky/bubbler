@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 egglog = { path = "egglog" }
+ruler = { path = "ruler" }
 symbolic_expressions = "5.0.3"
 
 [lib]
