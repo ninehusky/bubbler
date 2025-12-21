@@ -11,10 +11,7 @@ pub mod implication;
 
 use std::collections::HashMap;
 
-use crate::language::{
-    term::PredicateTerm,
-    Language,
-};
+use crate::language::{Language, term::PredicateTerm};
 use graph::{Graph, NodeId};
 use implication::Implication;
 

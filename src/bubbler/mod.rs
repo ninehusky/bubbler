@@ -4,7 +4,7 @@ use crate::colors::implication::Implication;
 use crate::language::constant::BubbleConstant;
 use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
-use crate::language::{term::Term, CVec, Environment, Language};
+use crate::language::{CVec, Environment, Language, term::Term};
 
 mod backend;
 mod schedule;
@@ -36,7 +36,6 @@ pub struct Bubbler<L: Language> {
 impl<L: Language> Bubbler<L> {
     pub fn new(cfg: BubblerConfig<L>) -> Self {
         let environment = L::make_environment(&cfg.vars);
-        
 
         Self {
             backend: EgglogBackend::<L>::new(),

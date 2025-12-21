@@ -1,6 +1,6 @@
 use std::{fmt::Display, hash::Hash, str::FromStr};
 
-use super::{sexp::Sexp, CVec, Constant, Environment, Language, OpTrait};
+use super::{CVec, Constant, Environment, Language, OpTrait, sexp::Sexp};
 
 use std::collections::HashMap;
 

@@ -3,23 +3,24 @@
 use std::collections::HashMap;
 
 use egglog::{
+    CommandOutput, EGraph,
     ast::{
-        Expr, GenericAction, GenericActions, GenericCommand, GenericFact,
-        GenericRule, GenericRunConfig, GenericSchedule, Variant,
+        Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
+        GenericRunConfig, GenericSchedule, Variant,
     },
     call, lit,
-    prelude::{add_relation, add_ruleset, RustSpan, Span},
-    span, var, CommandOutput, EGraph,
+    prelude::{RustSpan, Span, add_relation, add_ruleset},
+    span, var,
 };
 use intern::InternStore;
 
 use crate::{
     colors::implication::Implication,
     language::{
+        CVec, Language, OpTrait, PVec,
         constant::BubbleConstant,
         rewrite::Rewrite,
         term::{PredicateTerm, Term},
-        CVec, Language, OpTrait, PVec,
     },
 };
 
@@ -238,9 +239,7 @@ impl<L: Language> EgglogBackend<L> {
                         panic!("CVec hash not found in store.");
                     };
 
-                    res.entry(cvec.clone())
-                        .or_default()
-                        .push(term_expr);
+                    res.entry(cvec.clone()).or_default().push(term_expr);
                 }
                 _ => panic!("Expected has-cvec call."),
             };
