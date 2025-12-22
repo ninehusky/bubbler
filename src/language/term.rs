@@ -1,7 +1,8 @@
 use std::{fmt::Display, hash::Hash, str::FromStr};
 
-use super::{CVec, Constant, Environment, Language, OpTrait, sexp::Sexp};
+use super::{CVec, Constant, Environment, Language, OpTrait};
 
+use ruler::enumo::Sexp;
 use std::collections::HashMap;
 
 /// The AST nodes of a Predicate Language.
@@ -69,6 +70,25 @@ where
 }
 
 impl<L: Language> Term<L> {
+    pub fn vars(&self) -> Vec<String> {
+        let mut vars = vec![];
+        match self {
+            Term::Hole(_) => {}
+            Term::Var(name) => {
+                vars.push(name.clone());
+            }
+            Term::Const(_) => {}
+            Term::Call(_, children) => {
+                for child in children {
+                    vars.extend(child.vars());
+                }
+            }
+        }
+        vars.sort();
+        vars.dedup();
+        vars
+    }
+
     pub fn from_sexp(sexp: &Sexp) -> Result<Term<L>, String> {
         match sexp {
             Sexp::Atom(s) => {
@@ -229,8 +249,6 @@ impl<L: Language> Term<L> {
             }
             Term::Const(c) => Ok(Term::Const(c.clone())),
             Term::Call(op, children) => {
-                println!("op: {}", op);
-                println!("children: {:?}", children);
                 let gen_children: Result<Vec<Term<L>>, String> =
                     children.iter().map(|c| c.generalize(cache)).collect();
                 Ok(Term::Call(op.clone(), gen_children?))

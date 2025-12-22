@@ -3,24 +3,23 @@
 use std::collections::HashMap;
 
 use egglog::{
-    CommandOutput, EGraph,
     ast::{
         Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
         GenericRunConfig, GenericSchedule, Variant,
     },
     call, lit,
-    prelude::{RustSpan, Span, add_relation, add_ruleset},
-    span, var,
+    prelude::{add_relation, add_ruleset, RustSpan, Span},
+    span, var, CommandOutput, EGraph,
 };
 use intern::InternStore;
 
 use crate::{
     colors::implication::Implication,
     language::{
-        CVec, Language, OpTrait, PVec,
         constant::BubbleConstant,
         rewrite::Rewrite,
         term::{PredicateTerm, Term},
+        CVec, Language, OpTrait, PVec,
     },
 };
 
@@ -205,7 +204,7 @@ impl<L: Language> EgglogBackend<L> {
     }
 
     /// Returns a mapping from CVecs to terms in the egraph with those CVecs.
-    fn get_cvec_map(&mut self) -> HashMap<CVec<L>, Vec<Term<L>>> {
+    pub fn get_cvec_map(&mut self) -> HashMap<CVec<L>, Vec<Term<L>>> {
         let result = self
             .egraph
             .run_program(vec![GenericCommand::PrintFunction(

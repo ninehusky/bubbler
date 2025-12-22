@@ -39,7 +39,7 @@ impl<L: Language> Display for Rewrite<L> {
 impl<L: Language> Rewrite<L> {
     // NOTE: do not make another constructor for this that is _not_ generalized,
     // without a very good, very documented reason.
-    pub fn new(cond: Option<Term<L>>, lhs: Term<L>, rhs: Term<L>) -> Self {
+    pub fn new(cond: Option<Term<L>>, lhs: Term<L>, rhs: Term<L>) -> Result<Self, String> {
         let mut map = HashMap::new();
         let cond = cond.map(|c| {
             c.generalize(&mut map)
@@ -49,10 +49,20 @@ impl<L: Language> Rewrite<L> {
         let lhs = lhs.generalize(&mut map).expect("Failed to generalize LHS.");
         let rhs = rhs.generalize(&mut map).expect("Failed to generalize RHS.");
 
-        match cond {
+        if lhs.vars().iter().any(|v| !rhs.vars().contains(v)) {
+            return Err("LHS of a rewrite cannot contain variables not in the RHS.".to_string());
+        }
+
+        // If the lhs is just a Hole, reject it. See #21 for why
+        // Bubbler doesn't have the machinery to handle rules like this.
+        if matches!(lhs, Term::Hole(_)) {
+            return Err("LHS of a rewrite cannot be just a Hole.".to_string());
+        }
+
+        Ok(match cond {
             Some(c) => Self::Conditional { cond: c, lhs, rhs },
             None => Self::Unconditional { lhs, rhs },
-        }
+        })
     }
 }
 

@@ -1,12 +1,15 @@
 use backend::EgglogBackend;
+use schedule::BubblerAction;
 
 use crate::colors::implication::Implication;
 use crate::language::constant::BubbleConstant;
 use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
-use crate::language::{CVec, Environment, Language, term::Term};
+use crate::language::{term::Term, CVec, Environment, Language};
 
 mod backend;
+mod enumeration;
+mod identification;
 mod schedule;
 
 pub struct BubblerConfig<L: Language> {
@@ -44,6 +47,38 @@ impl<L: Language> Bubbler<L> {
             implications: vec![],
         }
     }
+
+    // pub fn run_action(&mut self, action: BubblerAction<L>) {
+    //     match action {
+    //         BubblerAction::Enumeration(act) => {
+    //             act.enumerate(self, ruler::enumo::Workload::default())
+    //                 .unwrap();
+    //         }
+    //         BubblerAction::Identification(act) => {
+    //             let inferred = act.identify(self).unwrap();
+    //             match inferred {
+    //                 InferredFacts::Implications(imps) => {
+    //                     self.implications.extend(imps);
+    //                 }
+    //                 InferredFacts::Rewrites(rws) => {
+    //                     self.rules.extend(rws);
+    //                 }
+    //             }
+    //         }
+    //         BubblerAction::Minimization(act) => {
+    //             let candidates = InferredFacts::Rewrites(self.rules.clone());
+    //             let minimized = act.minimize(self, candidates).unwrap();
+    //             match minimized {
+    //                 InferredFacts::Implications(imps) => {
+    //                     self.implications = imps;
+    //                 }
+    //                 InferredFacts::Rewrites(rws) => {
+    //                     self.rules = rws;
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     /// Adds the predicate to the e-graph. If `add_pvec` is true, the
     /// `predicate`'s `[PVec]` with respect to the Bubbler's environment
@@ -99,4 +134,9 @@ impl<L: Language> Bubbler<L> {
     }
 }
 
-mod tests {}
+/// The stuff that Bubbler figures out.
+#[derive(Debug, Clone)]
+pub enum InferredFacts<L: Language> {
+    Implications(Vec<Implication<L>>),
+    Rewrites(Vec<Rewrite<L>>),
+}

@@ -15,7 +15,6 @@ use term::Term;
 
 pub mod constant;
 pub mod rewrite;
-pub(crate) mod sexp;
 pub mod term;
 
 /// A characteristic vector.

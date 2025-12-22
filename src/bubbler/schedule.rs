@@ -9,9 +9,12 @@
 
 use egglog::EGraph;
 
-use crate::language::Language;
+use crate::bubbler::Bubbler;
+use crate::language::{rewrite::Rewrite, Language};
 
 use ruler::enumo::Workload;
+
+use super::InferredFacts;
 
 pub struct BubblerSchedule<L: Language> {
     pub actions: Vec<BubblerAction<L>>,
@@ -24,21 +27,30 @@ impl<L: Language> BubblerSchedule<L> {
 }
 
 pub enum BubblerAction<L: Language> {
-    EnumerationAction(Box<dyn EnumerationAction<L>>),
-    IdentificationAction(Box<dyn IdentificationAction<L>>),
-    MinimizationAction(Box<dyn MinimizationAction<L>>),
+    Enumeration(Box<dyn Enumeration<L>>),
+    Identification(Box<dyn Identification<L>>),
+    Minimization(Box<dyn Minimization<L>>),
 }
 
 /// Enumeration: Add the terms in some workload to an e-graph.
-pub trait EnumerationAction<L: Language> {
-    fn enumerate(&self, egraph: &mut EGraph, workload: Workload) -> Result<String, String>;
+pub trait Enumeration<L: Language> {
+    fn enumerate_bubbler(&self, bubbler: &mut Bubbler<L>, workload: Workload)
+        -> Result<(), String>;
 }
 
 /// Identification: Analyze an e-graph for likely candidates
 /// of rewrites/implications.
-pub trait IdentificationAction<L: Language> {}
+pub trait Identification<L: Language> {
+    fn identify(&self, bubbler: &mut Bubbler<L>) -> Result<InferredFacts<L>, String>;
+}
 
 /// Minimization: Given a set of rewrites/implications,
 /// select a subset of rules that subsumes
 /// the proving power of the original set.
-pub trait MinimizationAction<L: Language> {}
+pub trait Minimization<L: Language> {
+    fn minimize(
+        &self,
+        bubbler: &mut Bubbler<L>,
+        candidates: InferredFacts<L>,
+    ) -> Result<InferredFacts<L>, String>;
+}
