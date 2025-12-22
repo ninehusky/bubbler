@@ -1,10 +1,14 @@
 use crate::{
     bubbler::{schedule::Identification, Bubbler, InferredFacts},
-    language::{rewrite::Rewrite, Language},
+    colors::implication::Implication,
+    language::{rewrite::Rewrite, Language, PVec},
 };
 
 use super::IdentificationConfig;
 
+/// CvecMatch identifies rewrites by looking for terms which are
+/// observationally equivalent in the e-graph. More or less a
+/// 1:1 mapping from the Enumo repo's implementation.
 pub struct CvecMatch<L: Language> {
     cfg: IdentificationConfig,
     _marker: std::marker::PhantomData<L>,
@@ -51,6 +55,70 @@ impl<L: Language> Identification<L> for CvecMatch<L> {
     }
 }
 
+/// PvecMatch finds likely candidates for _implications_ through pvec matching.
+/// Formally, two predicates with pvecs `p, q` are a match if
+/// `\forall i. p[i] => q[i]`. Like in the real world, implications in
+/// the forward directions do not guarantee implications in the reverse direction.
+pub struct PvecMatch<L: Language> {
+    cfg: IdentificationConfig,
+    _marker: std::marker::PhantomData<L>,
+}
+
+impl<L: Language> PvecMatch<L> {
+    pub fn new(cfg: IdentificationConfig) -> PvecMatch<L> {
+        Self {
+            cfg,
+            _marker: std::marker::PhantomData::<L>,
+        }
+    }
+}
+
+impl<L: Language> Identification<L> for PvecMatch<L> {
+    fn identify(&self, bubbler: &mut Bubbler<L>) -> Result<InferredFacts<L>, String> {
+        let pvec_map = bubbler.backend.get_pvec_map();
+
+        let pvecs = pvec_map.keys().cloned();
+
+        let mut matching_pvecs: Vec<(PVec, PVec)> = vec![];
+
+        for pvec1 in pvecs.clone() {
+            for pvec2 in pvecs.clone() {
+                if pvec1 == pvec2 {
+                    continue;
+                }
+
+                let mut implies = true;
+                for (b1, b2) in pvec1.iter().zip(pvec2.iter()) {
+                    if *b1 && !*b2 {
+                        implies = false;
+                        break;
+                    }
+                }
+
+                if implies {
+                    matching_pvecs.push((pvec1.clone(), pvec2.clone()));
+                }
+            }
+        }
+
+        for (from, to) in matching_pvecs {
+            let from_terms = pvec_map.get(&from).unwrap();
+            let to_terms = pvec_map.get(&to).unwrap();
+
+            for from_term in from_terms {
+                for to_term in to_terms {
+                    let implication = Implication {
+                        from: from_term.clone(),
+                        to: to_term.clone(),
+                    };
+                    bubbler.implications.push(implication);
+                }
+            }
+        }
+        Ok(InferredFacts::Implications(bubbler.implications.clone()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -91,31 +159,49 @@ mod tests {
             )
             .unwrap();
 
-        let cvec_map = bubbler.backend.get_cvec_map();
-
-        println!("Cvec Map:");
-        for (cvec, terms) in cvec_map {
-            println!("Cvec: {:?} => Terms:", cvec);
-            for term in terms {
-                println!("  {}", term);
-            }
-        }
-
         let identification_cfg: IdentificationConfig = IdentificationConfig {
             mode: IdentificationMode::Rewrites,
             validate_now: false,
         };
 
         let identification_act = CvecMatch::<LLVMLang>::new(identification_cfg);
-
         let inferred = identification_act.identify(&mut bubbler).unwrap();
-
         let InferredFacts::Rewrites(inferred) = inferred else {
             panic!("Expected rewrites inferred.");
         };
+        assert_eq!(inferred.len(), 3);
+    }
 
-        for i in inferred {
-            println!("Inferred Rewrite: {}", i);
-        }
+    #[test]
+    fn pvec_match_finds_implications() {
+        let cfg: BubblerConfig<LLVMLang> =
+            BubblerConfig::new(vec!["x".into(), "y".into()], vec![1, 2]);
+        let mut bubbler = Bubbler::new(cfg);
+
+        let enumeration_cfg: EnumerationConfig = EnumerationConfig {
+            mode: EnumerationMode::Predicates,
+            evaluate: true,
+        };
+
+        let enumerate_act = BasicEnumerate::<LLVMLang>::new(enumeration_cfg);
+
+        enumerate_act
+            .enumerate_bubbler(
+                &mut bubbler,
+                ruler::enumo::Workload::new(vec!["(Lt x y)", "(Gt x y)", "(Neq x y)"]),
+            )
+            .unwrap();
+
+        let identification_cfg: IdentificationConfig = IdentificationConfig {
+            mode: IdentificationMode::Implications,
+            validate_now: false,
+        };
+
+        let identification_act = PvecMatch::<LLVMLang>::new(identification_cfg);
+        let inferred = identification_act.identify(&mut bubbler).unwrap();
+        let InferredFacts::Implications(inferred) = inferred else {
+            panic!("Expected implications inferred.");
+        };
+        assert_eq!(inferred.len(), 2);
     }
 }

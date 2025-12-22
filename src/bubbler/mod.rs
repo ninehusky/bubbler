@@ -48,6 +48,10 @@ impl<L: Language> Bubbler<L> {
         }
     }
 
+    pub fn run_implications(&mut self) {
+        self.backend.run_implications().unwrap();
+    }
+
     // pub fn run_action(&mut self, action: BubblerAction<L>) {
     //     match action {
     //         BubblerAction::Enumeration(act) => {

@@ -99,7 +99,10 @@ impl<L: Language> Term<L> {
                 } else if s.chars().all(|c| c.is_alphabetic()) {
                     Ok(Term::Var(s.clone()))
                 } else {
-                    // Try to parse as constant
+                    // Try to parse as constant.
+                    // It's kind of suspicious that `(Const 0)` and `0` become
+                    // the same `Term`, but I don't know. Seems like a skill
+                    // issue if that ends up being a bug.
                     let const_val = s
                         .parse::<L::Constant>()
                         .map_err(|_| format!("Failed to parse constant: {}", s))?;

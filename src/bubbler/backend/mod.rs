@@ -248,7 +248,7 @@ impl<L: Language> EgglogBackend<L> {
     }
 
     /// Returns a mapping from PVecs to terms in the egraph with those PVecs.
-    fn get_pvec_map(&mut self) -> HashMap<PVec, Vec<PredicateTerm<L>>> {
+    pub fn get_pvec_map(&mut self) -> HashMap<PVec, Vec<PredicateTerm<L>>> {
         let result = self
             .egraph
             .run_program(vec![GenericCommand::PrintFunction(
@@ -452,6 +452,19 @@ impl<L: Language> EgglogBackend<L> {
             .run_program(commands)
             .map_err(|e| format!("Failed to add predicate: {:?}", e))?;
 
+        Ok(())
+    }
+
+    pub fn run_implications(&mut self) -> Result<(), String> {
+        self.egraph
+            .run_program(vec![GenericCommand::RunSchedule(GenericSchedule::Run(
+                span!(),
+                GenericRunConfig {
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                    until: None,
+                },
+            ))])
+            .map_err(|e| format!("Failed to run rewrites: {:?}", e))?;
         Ok(())
     }
 
