@@ -41,7 +41,7 @@ where
     }
 
     pub fn has_edge(&self, from: NodeId, to: NodeId) -> bool {
-        self.nodes[from.0].edges.contains(&to)
+        self.nodes[from.0].edges.iter().any(|&x| x == to)
     }
 
     pub fn add_edge(&mut self, from: NodeId, to: NodeId) {
