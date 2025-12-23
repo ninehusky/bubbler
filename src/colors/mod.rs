@@ -7,50 +7,13 @@
 //! Maybe there are more later. Meh!
 
 mod graph;
+pub mod implication;
 
 use std::collections::HashMap;
-use std::hash::Hash;
 
-use crate::language::{Language, Term};
+use crate::language::{Language, term::PredicateTerm};
 use graph::{Graph, NodeId};
-
-/// A condition under which new equalities may hold.
-/// TODO: Conditions should take terms in a metalanguage that can express arbitrary
-/// abstract conditions, not just terms in the object language.
-#[derive(Clone, PartialEq, Eq)]
-pub struct Condition<L: Language> {
-    pub term: Term<L>,
-}
-
-impl<L: Language> Hash for Condition<L>
-where
-    L: Language,
-{
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.term.hash(state);
-    }
-}
-
-/// A directed implication from one condition to another.
-/// How this relates to equalities: for two conditions `p`, `q`
-/// such that `p -> q`, any terms equal in `q` are also equal in `p`.
-/// Example:
-/// ```text
-/// p: x < 0
-/// q: x < 1
-/// Observe that p -> q; if x < 0, then x < 1 also holds.
-/// Therefore, any equality that holds under the assumption `q` also holds
-/// under the assumption `p`, e.g., `max(x, 2) == 2` in the world where we assume `x < 1`,
-/// therefore it also holds in the world where we assume `x < 0`.
-/// ```
-/// Bi-directional implications always represent equivalences.
-/// If you have a pair of implications `p -> q` and `q -> p`,
-/// that's a great opportunity to merge that into an equality.
-/// But don't let me boss you around.
-pub struct Implication<L: Language> {
-    pub from: Condition<L>,
-    pub to: Condition<L>,
-}
+use implication::Implication;
 
 /// A colored DAG structure for managing conditional equivalences.
 /// The nodes in the graph are conditions (colors), and the edges are
@@ -67,7 +30,7 @@ pub struct Lattice<L: Language> {
     graph: Graph<LatticeNode<L>>,
     top: NodeId,
     bottom: NodeId,
-    facts: HashMap<Condition<L>, NodeId>,
+    facts: HashMap<PredicateTerm<L>, NodeId>,
 }
 
 impl<L: Language> Default for Lattice<L> {
@@ -80,11 +43,11 @@ impl<L: Language> Default for Lattice<L> {
 pub enum LatticeNode<L: Language> {
     Top,
     Bottom,
-    Fact(Condition<L>),
+    Fact(PredicateTerm<L>),
 }
 
 impl<L: Language> Lattice<L> {
-    fn fact_node(&mut self, cond: Condition<L>) -> NodeId {
+    fn fact_node(&mut self, cond: PredicateTerm<L>) -> NodeId {
         if let Some(&id) = self.facts.get(&cond) {
             id
         } else {
