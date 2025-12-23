@@ -14,6 +14,7 @@ use crate::language::{rewrite::Rewrite, Language};
 
 use ruler::enumo::Workload;
 
+use super::backend::EgglogBackend;
 use super::InferredFacts;
 
 pub struct BubblerSchedule<L: Language> {
@@ -34,14 +35,17 @@ pub enum BubblerAction<L: Language> {
 
 /// Enumeration: Add the terms in some workload to an e-graph.
 pub trait Enumeration<L: Language> {
-    fn enumerate_bubbler(&self, bubbler: &mut Bubbler<L>, workload: Workload)
-        -> Result<(), String>;
+    fn enumerate_bubbler(
+        &self,
+        backend: &mut EgglogBackend<L>,
+        workload: Workload,
+    ) -> Result<(), String>;
 }
 
 /// Identification: Analyze an e-graph for likely candidates
 /// of rewrites/implications.
 pub trait Identification<L: Language> {
-    fn identify(&self, bubbler: &mut Bubbler<L>) -> Result<InferredFacts<L>, String>;
+    fn identify(&self, backend: &mut EgglogBackend<L>) -> Result<InferredFacts<L>, String>;
 }
 
 /// Minimization: Given a set of rewrites/implications,
@@ -50,7 +54,7 @@ pub trait Identification<L: Language> {
 pub trait Minimization<L: Language> {
     fn minimize(
         &self,
-        bubbler: &mut Bubbler<L>,
+        backend: &mut EgglogBackend<L>,
         candidates: InferredFacts<L>,
     ) -> Result<InferredFacts<L>, String>;
 }

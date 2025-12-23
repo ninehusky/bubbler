@@ -1,10 +1,11 @@
 use ruler::enumo::Workload;
 
 use crate::{
-    bubbler::schedule::Enumeration,
+    bubbler::{backend::EgglogBackend, schedule::Enumeration},
     language::{
+        constant::BubbleConstant,
         term::{PredicateTerm, Term},
-        Language,
+        Environment, Language,
     },
 };
 
@@ -13,13 +14,15 @@ use super::{EnumerationConfig, EnumerationMode};
 /// Adds all of the terms in the workload to the e-graph.
 pub struct BasicEnumerate<L: Language> {
     pub cfg: EnumerationConfig,
+    pub env: Environment<L>,
     _marker: std::marker::PhantomData<L>,
 }
 
 impl<L: Language> BasicEnumerate<L> {
-    pub fn new(cfg: EnumerationConfig) -> BasicEnumerate<L> {
+    pub fn new(cfg: EnumerationConfig, env: Environment<L>) -> BasicEnumerate<L> {
         Self {
             cfg,
+            env,
             _marker: std::marker::PhantomData::<L>,
         }
     }
@@ -28,19 +31,29 @@ impl<L: Language> BasicEnumerate<L> {
 impl<L: Language> Enumeration<L> for BasicEnumerate<L> {
     fn enumerate_bubbler(
         &self,
-        bubbler: &mut crate::bubbler::Bubbler<L>,
+        backend: &mut EgglogBackend<L>,
         workload: ruler::enumo::Workload,
     ) -> Result<(), String> {
         let cfg = self.cfg.clone();
         for sexp in workload.force() {
             let term: Term<L> = Term::from_sexp(&sexp)?;
+            let cvec = if cfg.evaluate {
+                Some(term.evaluate(&self.env))
+            } else {
+                None
+            };
             match cfg.mode {
                 EnumerationMode::Terms => {
-                    bubbler.add_term(&term, cfg.evaluate)?;
+                    backend.add_term(term, cvec)?;
                 }
                 EnumerationMode::Predicates => {
+                    let pvec = if let Some(cvec) = cvec {
+                        Some(cvec.to_pvec())
+                    } else {
+                        None
+                    };
                     let predicate = PredicateTerm::from_term(term);
-                    bubbler.add_predicate(&predicate, cfg.evaluate)?;
+                    backend.add_predicate(predicate, pvec)?;
                 }
                 _ => todo!(),
             }

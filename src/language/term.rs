@@ -288,9 +288,9 @@ impl<L: Language> Term<L> {
     // for these kinds of systems.
     pub fn evaluate(&self, env: &Environment<L>) -> CVec<L> {
         match self {
-            Term::Const(c) => {
-                vec![Some(c.clone()); env.values().next().map_or(1, |v| v.len())]
-            }
+            Term::Const(c) => vec![Some(c.clone()); env.values().next().map_or(1, |v| v.len())]
+                .into_iter()
+                .collect::<CVec<L>>(),
             Term::Var(v) => env.get(v).cloned().unwrap().into_iter().map(Some).collect(),
             Term::Call(op, children) => {
                 let child_vecs: Vec<_> = children.iter().map(|c| c.evaluate(env)).collect();

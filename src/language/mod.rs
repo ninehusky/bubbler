@@ -10,18 +10,15 @@ use std::{
     str::FromStr,
 };
 
-use constant::BubbleConstant;
-use term::Term;
-
 pub mod constant;
 pub mod rewrite;
 pub mod term;
+pub mod vectors;
 
-/// A characteristic vector.
-pub type CVec<L> = Vec<Option<<L as Language>::Constant>>;
-
-/// A predicate vector.
-pub type PVec = Vec<bool>;
+pub use constant::BubbleConstant;
+pub use rewrite::{Rewrite, RewriteSet};
+pub use term::{PredicateTerm, Term};
+pub use vectors::{CVec, PVec};
 
 pub type Constant<L> = <L as Language>::Constant;
 
@@ -61,11 +58,6 @@ pub trait Language: Clone + Debug + PartialEq + Eq {
 
     /// List all operators in this language.
     fn ops() -> Vec<Self::Op>;
-
-    /// Default Egglog source generation
-    fn to_egglog_src() -> String {
-        panic!("Don't call this anymore.");
-    }
 
     fn evaluate_op(op: &Self::Op, child_vecs: &[CVec<Self>]) -> CVec<Self>;
 }

@@ -10,6 +10,7 @@ use crate::language::{term::Term, CVec, Environment, Language};
 mod backend;
 mod enumeration;
 mod identification;
+mod minimization;
 mod schedule;
 
 pub struct BubblerConfig<L: Language> {
@@ -28,9 +29,9 @@ impl<L: Language> BubblerConfig<L> {
     }
 }
 
-/// The Bubbler struct, which manages a core Bubbler e-graph.
+/// The Bubbler. This is the thing you use to run a `[BubblerSchedule]`, which
+/// defines how to explore a domain.
 pub struct Bubbler<L: Language> {
-    pub backend: EgglogBackend<L>,
     pub environment: Environment<L>,
     pub rules: Vec<Rewrite<L>>,
     pub implications: Vec<Implication<L>>,
@@ -41,15 +42,29 @@ impl<L: Language> Bubbler<L> {
         let environment = L::make_environment(&cfg.vars);
 
         Self {
-            backend: EgglogBackend::<L>::new(),
             environment,
             rules: vec![],
             implications: vec![],
         }
     }
 
-    pub fn run_implications(&mut self) {
-        self.backend.run_implications().unwrap();
+    /// Returns a new `EgglogBackend` that has been initialized with the Bubbler's
+    /// inferred rules and implications.
+    pub fn new_backend(&self) -> EgglogBackend<L> {
+        let mut backend = EgglogBackend::<L>::new();
+        for rule in &self.rules {
+            backend.register(&rule).unwrap();
+        }
+
+        for imp in &self.implications {
+            backend.register_implication(&imp).unwrap();
+        }
+
+        backend
+    }
+
+    pub fn run_implications(&self, backend: &mut EgglogBackend<L>) {
+        backend.run_implications().unwrap();
     }
 
     // pub fn run_action(&mut self, action: BubblerAction<L>) {
@@ -88,7 +103,8 @@ impl<L: Language> Bubbler<L> {
     /// `predicate`'s `[PVec]` with respect to the Bubbler's environment
     /// will be added to the e-graph as well.
     pub fn add_predicate(
-        &mut self,
+        &self,
+        backend: &mut EgglogBackend<L>,
         predicate: &PredicateTerm<L>,
         add_pvec: bool,
     ) -> Result<(), String> {
@@ -115,14 +131,19 @@ impl<L: Language> Bubbler<L> {
             None
         };
 
-        self.backend.add_predicate(predicate.clone(), pvec).unwrap();
+        backend.add_predicate(predicate.clone(), pvec).unwrap();
         Ok(())
     }
 
     /// Adds the term to the e-graph. If `add_cvec` is true, the
     /// `term`'s `[CVec]` with respect to the Bubbler's environment
     /// will be added to the e-graph as well.
-    pub fn add_term(&mut self, term: &Term<L>, add_cvec: bool) -> Result<(), String> {
+    pub fn add_term(
+        &self,
+        backend: &mut EgglogBackend<L>,
+        term: &Term<L>,
+        add_cvec: bool,
+    ) -> Result<(), String> {
         if !term.is_concrete() {
             return Err("Terms must be concrete.".into());
         }
@@ -133,7 +154,7 @@ impl<L: Language> Bubbler<L> {
             None
         };
 
-        self.backend.add_term(term.clone(), cvec).unwrap();
+        backend.add_term(term.clone(), cvec).unwrap();
         Ok(())
     }
 }

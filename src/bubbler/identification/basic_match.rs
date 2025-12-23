@@ -1,5 +1,5 @@
 use crate::{
-    bubbler::{schedule::Identification, Bubbler, InferredFacts},
+    bubbler::{backend::EgglogBackend, schedule::Identification, Bubbler, InferredFacts},
     colors::implication::Implication,
     language::{rewrite::Rewrite, Language, PVec},
 };
@@ -24,14 +24,14 @@ impl<L: Language> CvecMatch<L> {
 }
 
 impl<L: Language> Identification<L> for CvecMatch<L> {
-    fn identify(&self, bubbler: &mut Bubbler<L>) -> Result<InferredFacts<L>, String> {
+    fn identify(&self, backend: &mut EgglogBackend<L>) -> Result<InferredFacts<L>, String> {
         if self.cfg.mode != super::IdentificationMode::Rewrites {
             return Err("CvecMatch only supports rewrite identification.".into());
         }
-        let cvec_map = bubbler.backend.get_cvec_map();
-        // Naively, any pairing of two terms with identical
-        // cvecs is a rewrite.
+        let cvec_map = backend.get_cvec_map();
 
+        // Naively, a pairing of any two terms with identical
+        // cvecs is a rewrite.
         let mut candidates = vec![];
 
         for (_cvec, terms) in cvec_map {
@@ -74,8 +74,8 @@ impl<L: Language> PvecMatch<L> {
 }
 
 impl<L: Language> Identification<L> for PvecMatch<L> {
-    fn identify(&self, bubbler: &mut Bubbler<L>) -> Result<InferredFacts<L>, String> {
-        let pvec_map = bubbler.backend.get_pvec_map();
+    fn identify(&self, backend: &mut EgglogBackend<L>) -> Result<InferredFacts<L>, String> {
+        let pvec_map = backend.get_pvec_map();
 
         let pvecs = pvec_map.keys().cloned();
 
@@ -101,6 +101,7 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
             }
         }
 
+        let mut candidates = vec![];
         for (from, to) in matching_pvecs {
             let from_terms = pvec_map.get(&from).unwrap();
             let to_terms = pvec_map.get(&to).unwrap();
@@ -111,11 +112,11 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
                         from: from_term.clone(),
                         to: to_term.clone(),
                     };
-                    bubbler.implications.push(implication);
+                    candidates.push(implication);
                 }
             }
         }
-        Ok(InferredFacts::Implications(bubbler.implications.clone()))
+        Ok(InferredFacts::Implications(candidates))
     }
 }
 
@@ -136,18 +137,21 @@ mod tests {
     fn cvec_match_finds_add_mul_rules() {
         let cfg: BubblerConfig<LLVMLang> =
             BubblerConfig::new(vec!["x".into(), "y".into()], vec![1, 2]);
-        let mut bubbler = Bubbler::new(cfg);
+        let bubbler = Bubbler::new(cfg);
 
         let enumeration_cfg: EnumerationConfig = EnumerationConfig {
             mode: EnumerationMode::Terms,
             evaluate: true,
         };
 
-        let enumerate_act = BasicEnumerate::<LLVMLang>::new(enumeration_cfg);
+        let enumerate_act =
+            BasicEnumerate::<LLVMLang>::new(enumeration_cfg, bubbler.environment.clone());
+
+        let mut backend = bubbler.new_backend();
 
         enumerate_act
             .enumerate_bubbler(
-                &mut bubbler,
+                &mut backend,
                 ruler::enumo::Workload::new(vec![
                     "(Add x y)",
                     "(Mul x y)",
@@ -165,7 +169,7 @@ mod tests {
         };
 
         let identification_act = CvecMatch::<LLVMLang>::new(identification_cfg);
-        let inferred = identification_act.identify(&mut bubbler).unwrap();
+        let inferred = identification_act.identify(&mut backend).unwrap();
         let InferredFacts::Rewrites(inferred) = inferred else {
             panic!("Expected rewrites inferred.");
         };
@@ -183,11 +187,14 @@ mod tests {
             evaluate: true,
         };
 
-        let enumerate_act = BasicEnumerate::<LLVMLang>::new(enumeration_cfg);
+        let mut backend: EgglogBackend<LLVMLang> = bubbler.new_backend();
+
+        let enumerate_act =
+            BasicEnumerate::<LLVMLang>::new(enumeration_cfg, bubbler.environment.clone());
 
         enumerate_act
             .enumerate_bubbler(
-                &mut bubbler,
+                &mut backend,
                 ruler::enumo::Workload::new(vec!["(Lt x y)", "(Gt x y)", "(Neq x y)"]),
             )
             .unwrap();
@@ -198,7 +205,7 @@ mod tests {
         };
 
         let identification_act = PvecMatch::<LLVMLang>::new(identification_cfg);
-        let inferred = identification_act.identify(&mut bubbler).unwrap();
+        let inferred = identification_act.identify(&mut backend).unwrap();
         let InferredFacts::Implications(inferred) = inferred else {
             panic!("Expected implications inferred.");
         };

@@ -722,7 +722,7 @@ mod tests {
     fn get_cvec_map_ok() {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         // Add a term with a CVec.
-        let cvec: CVec<LLVMLang> = vec![Some(1), Some(2), None];
+        let cvec: CVec<LLVMLang> = vec![Some(1), Some(2), None].into_iter().collect();
 
         let one_plus_two: Term<LLVMLang> = Term::Call(
             LLVMLangOp::Add,
@@ -754,7 +754,7 @@ mod tests {
     fn get_pvec_map_ok() {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         // Add a predicate with a PVec.
-        let pvec: PVec = vec![true, false, true];
+        let pvec: PVec = vec![true, false, true].into_iter().collect::<PVec>();
 
         let predicate_a: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
             LLVMLangOp::Lt,
