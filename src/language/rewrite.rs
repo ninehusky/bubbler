@@ -64,6 +64,20 @@ impl<L: Language> Rewrite<L> {
             None => Self::Unconditional { lhs, rhs },
         })
     }
+
+    pub fn lhs_concrete(&self) -> Term<L> {
+        match self {
+            Rewrite::Conditional { lhs, .. } => lhs.concretize().unwrap(),
+            Rewrite::Unconditional { lhs, .. } => lhs.concretize().unwrap(),
+        }
+    }
+
+    pub fn rhs_concrete(&self) -> Term<L> {
+        match self {
+            Rewrite::Conditional { rhs, .. } => rhs.concretize().unwrap(),
+            Rewrite::Unconditional { rhs, .. } => rhs.concretize().unwrap(),
+        }
+    }
 }
 
 pub struct RewriteSet<L: Language>(pub IndexMap<Arc<str>, Rewrite<L>>);

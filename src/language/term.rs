@@ -70,6 +70,15 @@ where
 }
 
 impl<L: Language> Term<L> {
+    pub fn size(&self) -> usize {
+        match self {
+            Term::Hole(_) => 1,
+            Term::Var(_) => 1,
+            Term::Const(_) => 1,
+            Term::Call(_, children) => 1 + children.iter().map(|c| c.size()).sum::<usize>(),
+        }
+    }
+
     pub fn vars(&self) -> Vec<String> {
         let mut vars = vec![];
         match self {

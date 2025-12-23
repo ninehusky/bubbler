@@ -480,6 +480,28 @@ impl<L: Language> EgglogBackend<L> {
             .map_err(|e| format!("Failed to run rewrites: {:?}", e))?;
         Ok(())
     }
+
+    pub fn is_equal(&mut self, lhs: &Term<L>, rhs: &Term<L>) -> Result<bool, String> {
+        let result = self.egraph.run_program(vec![GenericCommand::Check(
+            span!(),
+            vec![GenericFact::Eq(
+                span!(),
+                lhs.clone().into(),
+                rhs.clone().into(),
+            )],
+        )]);
+
+        match result {
+            Ok(outputs) => Ok(true),
+            Err(e) => {
+                if let egglog::Error::CheckError(_, _) = e {
+                    Ok(false)
+                } else {
+                    Err(format!("Failed to check equality: {:?}", e))
+                }
+            }
+        }
+    }
 }
 
 impl<L: Language> From<egglog::ast::Expr> for Term<L> {
