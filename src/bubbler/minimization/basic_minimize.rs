@@ -1,13 +1,15 @@
 use crate::{
     bubbler::{backend::EgglogBackend, schedule::Minimization, Bubbler, InferredFacts},
+    colors::implication::Implication,
     language::{rewrite::Rewrite, Language},
 };
 
-use super::score_fns::ScoreFn;
+use super::ImplicationScoreFn;
+use super::RewriteScoreFn;
 
-pub struct BasicMinimize<L: Language> {
+pub struct BasicRewriteMinimize<L: Language> {
     /// A scoring function for each rewrite. Low means better!
-    score_fn: Box<ScoreFn<L>>,
+    score_fn: Box<RewriteScoreFn<L>>,
     existing: Vec<Rewrite<L>>,
     step_size: usize,
     _marker: std::marker::PhantomData<L>,
@@ -17,8 +19,12 @@ pub struct BasicMinimize<L: Language> {
 /// Until the `candidates` are empty:
 /// 1. Pick a fact to add.
 /// 2. Remove all facts in `candidates` that are now redundant.
-impl<L: Language> BasicMinimize<L> {
-    pub fn new(score_fn: Box<ScoreFn<L>>, existing: Vec<Rewrite<L>>, step_size: usize) -> Self {
+impl<L: Language> BasicRewriteMinimize<L> {
+    pub fn new(
+        score_fn: Box<RewriteScoreFn<L>>,
+        existing: Vec<Rewrite<L>>,
+        step_size: usize,
+    ) -> Self {
         Self {
             score_fn,
             existing,
@@ -28,7 +34,7 @@ impl<L: Language> BasicMinimize<L> {
     }
 }
 
-impl<L: Language> Minimization<L> for BasicMinimize<L> {
+impl<L: Language> Minimization<L> for BasicRewriteMinimize<L> {
     fn minimize(
         &self,
         backend: &mut EgglogBackend<L>,
@@ -36,7 +42,7 @@ impl<L: Language> Minimization<L> for BasicMinimize<L> {
     ) -> Result<InferredFacts<L>, String> {
         // 1. Sort candidates by some scoring function.
         let InferredFacts::Rewrites(mut candidates) = candidates else {
-            return Err("BasicMinimize only supports rewrite minimization.".into());
+            return Err("BasicRewriteMinimize only supports rewrite minimization.".into());
         };
         candidates.sort_by(|a, b| {
             let score_a = (&self.score_fn)(&a);
@@ -154,7 +160,11 @@ mod tests {
         .unwrap();
         candidates.push(r4.clone());
 
-        let minimizer = BasicMinimize::new(score_fns::ast_size::<LLVMLang>(), vec![], 1);
+        let minimizer = BasicRewriteMinimize::new(
+            score_fns::rewrite_score_fns::ast_size::<LLVMLang>(),
+            vec![],
+            1,
+        );
         let minimized = minimizer
             .minimize(&mut backend, InferredFacts::Rewrites(candidates))
             .unwrap();
@@ -167,5 +177,70 @@ mod tests {
         assert!(minimized.contains(&r1));
         assert!(minimized.contains(&r2));
         assert!(minimized.contains(&r4));
+    }
+}
+
+pub struct BasicImplicationMinimize<L: Language> {
+    /// A scoring function for each rewrite. Low means better!
+    score_fn: Box<ImplicationScoreFn<L>>,
+    existing: Vec<Implication<L>>,
+    step_size: usize,
+    _marker: std::marker::PhantomData<L>,
+}
+
+/// The basic minimization strategy pitched in the Ruler paper.
+/// Until the `candidates` are empty:
+/// 1. Pick a fact to add.
+/// 2. Remove all facts in `candidates` that are now redundant.
+impl<L: Language> BasicImplicationMinimize<L> {
+    pub fn new(
+        score_fn: Box<ImplicationScoreFn<L>>,
+        existing: Vec<Implication<L>>,
+        step_size: usize,
+    ) -> Self {
+        Self {
+            score_fn,
+            existing,
+            step_size,
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<L: Language> Minimization<L> for BasicImplicationMinimize<L> {
+    fn minimize(
+        &self,
+        backend: &mut EgglogBackend<L>,
+        candidates: InferredFacts<L>,
+    ) -> Result<InferredFacts<L>, String> {
+        // 1. Sort candidates by some scoring function.
+        let InferredFacts::Implications(mut candidates) = candidates else {
+            return Err("BasicImplicationMinimize only supports implication minimization.".into());
+        };
+        candidates.sort_by(|a, b| {
+            let score_a = (&self.score_fn)(&a);
+            let score_b = (&self.score_fn)(&b);
+            score_b.cmp(&score_a)
+        });
+
+        let mut chosen: Vec<Implication<L>> = self.existing.clone();
+
+        // 2. Iteratively add implications and remove redundant ones.
+        while let Some(selected) = candidates.pop() {
+            chosen.push(selected.clone());
+            backend.register_implication(&selected).unwrap();
+
+            backend.run_rewrites().unwrap();
+
+            // Remove redundant candidates.
+            candidates.retain(|imp| {
+                let pre = imp.lhs_concrete();
+                let post = imp.rhs_concrete();
+
+                !backend.is_implied(&pre, &post).unwrap()
+            });
+        }
+
+        Ok(InferredFacts::Implications(chosen))
     }
 }
