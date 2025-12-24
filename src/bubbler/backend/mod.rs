@@ -388,14 +388,7 @@ impl<L: Language> EgglogBackend<L> {
                         // mark the LHS and RHS as conditionally equal under cond if...
                         call!(
                             bubbler_defns::COND_EQUAL_RELATION.to_string(),
-                            vec![
-                                call!(
-                                    bubbler_defns::BASE_TERM.to_string(),
-                                    vec![cond.clone().into()]
-                                ),
-                                lhs.clone().into(),
-                                rhs.clone().into()
-                            ]
+                            vec![cond.clone().into(), lhs.clone().into(), rhs.clone().into()]
                         ),
                     )]),
                     // ...we can see that the LHS is in the egraph.
@@ -554,6 +547,15 @@ impl<L: Language> EgglogBackend<L> {
             ))])
             .map_err(|e| format!("Failed to run rewrites: {:?}", e))?;
         Ok(())
+    }
+
+    pub fn is_conditionally_equal(
+        &mut self,
+        cond: &PredicateTerm<L>,
+        lhs: &Term<L>,
+        rhs: &Term<L>,
+    ) -> Result<bool, String> {
+        todo!("Oh my goodness...")
     }
 
     pub fn is_equal(&mut self, lhs: &Term<L>, rhs: &Term<L>) -> Result<bool, String> {
@@ -897,10 +899,10 @@ mod tests {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         // y / y ~> 1 if y != 0
         let rewrite = Rewrite::Conditional {
-            cond: Term::Call(
+            cond: PredicateTerm::from_term(Term::Call(
                 LLVMLangOp::Neq,
                 vec![Term::Hole("?y".into()), Term::Const(0.into())],
-            ),
+            )),
             lhs: Term::Call(
                 LLVMLangOp::Div,
                 vec![Term::Hole("?y".into()), Term::Hole("?y".into())],

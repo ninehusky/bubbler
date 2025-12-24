@@ -58,7 +58,7 @@ pub mod score_fns {
 
             Box::new(|rw: &Rewrite<L>| {
                 let cond_cost = match rw {
-                    Rewrite::Conditional { cond, .. } => cost(cond),
+                    Rewrite::Conditional { cond, .. } => cost(&cond.term),
                     Rewrite::Unconditional { .. } => 0,
                 };
                 let lhs_cost = cost(&rw.lhs_concrete());
@@ -70,7 +70,7 @@ pub mod score_fns {
         pub fn ast_size<L: Language>() -> Box<RewriteScoreFn<L>> {
             Box::new(|rw: &Rewrite<L>| {
                 let cond_size = match rw {
-                    Rewrite::Conditional { cond, .. } => cond.size(),
+                    Rewrite::Conditional { cond, .. } => cond.term.size(),
                     Rewrite::Unconditional { .. } => 0,
                 };
                 let lhs_size = rw.lhs_concrete().size();

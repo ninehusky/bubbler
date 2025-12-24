@@ -1,13 +1,13 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use super::Language;
+use super::{Language, PredicateTerm};
 use crate::language::Term;
 use egglog::util::IndexMap;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Rewrite<L: Language> {
     Conditional {
-        cond: Term<L>,
+        cond: PredicateTerm<L>,
         lhs: Term<L>,
         rhs: Term<L>,
     },
@@ -24,7 +24,7 @@ impl<L: Language> Display for Rewrite<L> {
                 write!(
                     f,
                     "if {} then {} ~> {}",
-                    cond.to_sexp(),
+                    cond.term.to_sexp(),
                     lhs.to_sexp(),
                     rhs.to_sexp()
                 )
@@ -39,10 +39,11 @@ impl<L: Language> Display for Rewrite<L> {
 impl<L: Language> Rewrite<L> {
     // NOTE: do not make another constructor for this that is _not_ generalized,
     // without a very good, very documented reason.
-    pub fn new(cond: Option<Term<L>>, lhs: Term<L>, rhs: Term<L>) -> Result<Self, String> {
+    pub fn new(cond: Option<PredicateTerm<L>>, lhs: Term<L>, rhs: Term<L>) -> Result<Self, String> {
         let mut map = HashMap::new();
         let cond = cond.map(|c| {
-            c.generalize(&mut map)
+            c.term
+                .generalize(&mut map)
                 .expect("Failed to generalize condition.")
         });
 
@@ -60,9 +61,22 @@ impl<L: Language> Rewrite<L> {
         }
 
         Ok(match cond {
-            Some(c) => Self::Conditional { cond: c, lhs, rhs },
+            Some(c) => Self::Conditional {
+                cond: PredicateTerm::from_term(c),
+                lhs,
+                rhs,
+            },
             None => Self::Unconditional { lhs, rhs },
         })
+    }
+
+    pub fn cond_concrete(&self) -> Option<PredicateTerm<L>> {
+        match self {
+            Rewrite::Conditional { cond, .. } => {
+                Some(PredicateTerm::from_term(cond.term.concretize().unwrap()))
+            }
+            Rewrite::Unconditional { .. } => None,
+        }
     }
 
     pub fn lhs_concrete(&self) -> Term<L> {
@@ -96,7 +110,7 @@ impl<L: Language> RewriteSet<L> {
             } => {
                 let key = format!(
                     "if {} then {} ~> {}",
-                    cond.to_sexp(),
+                    cond.term.to_sexp(),
                     lhs.to_sexp(),
                     rhs.to_sexp()
                 );

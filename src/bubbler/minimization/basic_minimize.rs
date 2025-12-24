@@ -329,3 +329,67 @@ mod imp_tests {
         assert_eq!(minimized.len(), 3 + 1);
     }
 }
+
+pub struct ConditionalRewriteMinimize<L: Language> {
+    score_fn: Box<RewriteScoreFn<L>>,
+    existing_rws: Vec<Rewrite<L>>,
+    existing_imps: Vec<Implication<L>>,
+    step_size: usize,
+    _marker: std::marker::PhantomData<L>,
+}
+
+impl<L: Language> Minimization<L> for ConditionalRewriteMinimize<L> {
+    fn minimize(
+        &self,
+        backend: &mut EgglogBackend<L>,
+        candidates: InferredFacts<L>,
+    ) -> Result<InferredFacts<L>, String> {
+        // 1. Sort candidates by some scoring function.
+        let InferredFacts::Rewrites(mut candidates) = candidates else {
+            return Err("ConditionalRewriteMinimize only supports rewrite minimization.".into());
+        };
+
+        candidates.sort_by(|a, b| {
+            let score_a = (&self.score_fn)(&a);
+            let score_b = (&self.score_fn)(&b);
+            score_b.cmp(&score_a)
+        });
+
+        // 2. Add the predicates, lhs, and rhs of each candidate to the backend.
+        for rw in candidates.iter() {
+            if let Rewrite::Conditional { cond, .. } = rw {
+                backend
+                    .add_predicate(
+                        PredicateTerm::from_term(cond.term.concretize().clone().unwrap()),
+                        None,
+                    )
+                    .unwrap();
+            }
+            let lhs = rw.lhs_concrete();
+            let rhs = rw.rhs_concrete();
+            backend.add_term(lhs.clone(), None).unwrap();
+            backend.add_term(rhs.clone(), None).unwrap();
+        }
+
+        // 3. While candidates is not empty:
+        //   a. Pick the best candidate.
+        //   b. Add it to the backend.
+        //   c. Run rewrites and implications.
+        while let Some(selected) = candidates.pop() {
+            backend.register(&selected).unwrap();
+
+            backend.run_rewrites().unwrap();
+            backend.run_implications().unwrap();
+
+            // Remove redundant candidates.
+            candidates.retain(|rw| {
+                let lhs = rw.lhs_concrete();
+                let rhs = rw.rhs_concrete();
+
+                !backend.is_equal(&lhs, &rhs).unwrap()
+            });
+        }
+
+        Err("ConditionalRewriteMinimize is not yet implemented.".into())
+    }
+}
