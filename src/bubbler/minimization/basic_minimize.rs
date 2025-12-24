@@ -385,8 +385,9 @@ impl<L: Language> Minimization<L> for ConditionalRewriteMinimize<L> {
             candidates.retain(|rw| {
                 let lhs = rw.lhs_concrete();
                 let rhs = rw.rhs_concrete();
+                let cond = rw.cond_concrete().unwrap();
 
-                !backend.is_equal(&lhs, &rhs).unwrap()
+                !backend.is_conditionally_equal(&cond, &lhs, &rhs).unwrap()
             });
         }
 
