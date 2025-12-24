@@ -371,12 +371,15 @@ impl<L: Language> Minimization<L> for ConditionalRewriteMinimize<L> {
             backend.add_term(rhs.clone(), None).unwrap();
         }
 
+        let mut chosen: Vec<Rewrite<L>> = self.existing_rws.clone();
+
         // 3. While candidates is not empty:
         //   a. Pick the best candidate.
         //   b. Add it to the backend.
         //   c. Run rewrites and implications.
         while let Some(selected) = candidates.pop() {
             backend.register(&selected).unwrap();
+            chosen.push(selected.clone());
 
             backend.run_rewrites().unwrap();
             backend.run_implications().unwrap();
@@ -391,6 +394,113 @@ impl<L: Language> Minimization<L> for ConditionalRewriteMinimize<L> {
             });
         }
 
-        Err("ConditionalRewriteMinimize is not yet implemented.".into())
+        Ok(InferredFacts::Rewrites(chosen))
+    }
+}
+
+#[cfg(test)]
+pub mod cond_rw_tests {
+    use crate::{
+        bubbler::minimization::score_fns,
+        language::Term,
+        test_langs::llvm::{LLVMLang, LLVMLangOp},
+    };
+
+    use super::*;
+
+    #[test]
+    pub fn conditional_rewrite_minimize() {
+        let mut backend = EgglogBackend::<LLVMLang>::new();
+
+        let candidates: Vec<Rewrite<LLVMLang>> = vec![
+            Rewrite::new(
+                Some(PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0)],
+                ))),
+                Term::Call(
+                    LLVMLangOp::Div,
+                    vec![Term::Var("a".into()), Term::Var("a".into())],
+                ),
+                Term::Const(1),
+            )
+            .unwrap(),
+            Rewrite::new(
+                Some(PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Lt,
+                    vec![Term::Var("a".into()), Term::Const(0)],
+                ))),
+                Term::Call(
+                    LLVMLangOp::Div,
+                    vec![Term::Var("a".into()), Term::Var("a".into())],
+                ),
+                Term::Const(1),
+            )
+            .unwrap(),
+            Rewrite::new(
+                // rig the election and get this one to be chosen first!
+                // in real life, we'd probably choose the weakest condition
+                // first, with pvecs as a proxy for weakness.
+                Some(PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Neq,
+                    vec![Term::Var("a".into()), Term::Const(0)],
+                ))),
+                Term::Call(
+                    LLVMLangOp::Div,
+                    vec![Term::Var("a".into()), Term::Var("a".into())],
+                ),
+                Term::Const(1),
+            )
+            .unwrap(),
+        ];
+
+        // note that Lt -> Neq is missing here. That's on purpose!
+        let implications: Vec<Implication<LLVMLang>> = vec![Implication::new(
+            PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Gt,
+                vec![Term::Var("a".into()), Term::Const(0)],
+            )),
+            PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Neq,
+                vec![Term::Var("a".into()), Term::Const(0)],
+            )),
+        )
+        .unwrap()];
+
+        for imp in &implications {
+            backend.register_implication(imp).unwrap();
+        }
+
+        let minimizer: ConditionalRewriteMinimize<LLVMLang> = ConditionalRewriteMinimize {
+            score_fn: score_fns::rewrite_score_fns::ast_size::<LLVMLang>(),
+            existing_rws: vec![],
+            existing_imps: implications.clone(),
+            step_size: 1,
+            _marker: std::marker::PhantomData,
+        };
+
+        let minimized = minimizer
+            .minimize(&mut backend, InferredFacts::Rewrites(candidates))
+            .unwrap();
+
+        let InferredFacts::Rewrites(minimized) = &minimized else {
+            panic!("Expected rewrites after minimization.");
+        };
+
+        assert_eq!(minimized.len(), 2);
+        assert!(!minimized.contains(
+            &Rewrite::new(
+                Some(PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0)],
+                ))),
+                Term::Call(
+                    LLVMLangOp::Div,
+                    vec![Term::Var("a".into()), Term::Var("a".into())],
+                ),
+                Term::Const(1),
+            )
+            .unwrap()
+        ));
     }
 }

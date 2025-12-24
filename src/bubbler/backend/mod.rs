@@ -279,7 +279,7 @@ impl<L: Language> EgglogBackend<L> {
             }])
             .unwrap();
 
-        // if (implies p q) and (cond-equal p l r), then (cond-equal q l r)
+        // if (implies p q) and (cond-equal q l r), then (cond-equal p l r)
         egraph
             .run_program(vec![GenericCommand::Rule {
                 rule: GenericRule {
@@ -289,7 +289,7 @@ impl<L: Language> EgglogBackend<L> {
                         call!(
                             bubbler_defns::COND_EQUAL_RELATION.to_string(),
                             vec![
-                                var!("q".to_string()),
+                                var!("p".to_string()),
                                 var!("l".to_string()),
                                 var!("r".to_string())
                             ]
@@ -303,7 +303,7 @@ impl<L: Language> EgglogBackend<L> {
                         GenericFact::Fact(call!(
                             bubbler_defns::COND_EQUAL_RELATION.to_string(),
                             vec![
-                                var!("p".to_string()),
+                                var!("q".to_string()),
                                 var!("l".to_string()),
                                 var!("r".to_string())
                             ]
@@ -657,13 +657,39 @@ impl<L: Language> EgglogBackend<L> {
         Ok(())
     }
 
+    /// In the current view of the e-graph, are `lhs` and `rhs` equal
+    /// under the condition `cond`?
+    /// Note that like with all e-graph queries, you may get different
+    /// results depending on when you run this function, since the e-graph
+    /// learns new facts as you run rewrites and implications.
+    /// So to be clear -- if this returns `true`, then `lhs` and `rhs` are
+    /// definitely conditionally equal under `cond`. If it returns `false`,
+    /// the egraph hasn't figured out that they are conditionally equal.
     pub fn is_conditionally_equal(
         &mut self,
         cond: &PredicateTerm<L>,
         lhs: &Term<L>,
         rhs: &Term<L>,
     ) -> Result<bool, String> {
-        todo!("Oh my goodness...")
+        // First, check to see: are the lhs and rhs regularly equal?
+        if self.is_equal(lhs, rhs)? {
+            return Ok(true);
+        }
+
+        let result = self.egraph.run_program(vec![GenericCommand::Check(
+            span!(),
+            vec![GenericFact::Fact(Expr::Call(
+                span!(),
+                bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                vec![cond.clone().into(), lhs.clone().into(), rhs.clone().into()],
+            ))],
+        )]);
+
+        match result {
+            Ok(_) => Ok(true),
+            Err(egglog::Error::CheckError(_, _)) => Ok(false),
+            Err(e) => Err(format!("Failed to check conditional equality: {:?}", e)),
+        }
     }
 
     pub fn is_equal(&mut self, lhs: &Term<L>, rhs: &Term<L>) -> Result<bool, String> {
@@ -677,14 +703,9 @@ impl<L: Language> EgglogBackend<L> {
         )]);
 
         match result {
-            Ok(outputs) => Ok(true),
-            Err(e) => {
-                if let egglog::Error::CheckError(_, _) = e {
-                    Ok(false)
-                } else {
-                    Err(format!("Failed to check equality: {:?}", e))
-                }
-            }
+            Ok(_) => Ok(true),
+            Err(egglog::Error::CheckError(_, _)) => Ok(false),
+            Err(e) => Err(format!("Failed to check equality: {:?}", e)),
         }
     }
 
@@ -703,14 +724,8 @@ impl<L: Language> EgglogBackend<L> {
 
         match result {
             Ok(_) => Ok(true),
-            Err(e) => {
-                if let egglog::Error::CheckError(_, _) = e {
-                    println!("couldn't find implication linking {:?} to {:?}", lhs, rhs);
-                    Ok(false)
-                } else {
-                    Err(format!("Failed to check implication: {:?}", e))
-                }
-            }
+            Err(egglog::Error::CheckError(_, _)) => Ok(false),
+            Err(e) => Err(format!("Failed to check implication: {:?}", e)),
         }
     }
 }
@@ -1188,14 +1203,15 @@ mod tests {
             )
             .unwrap();
 
-        backend.run_implications().unwrap();
-
-        backend
-            .egraph
-            .parse_and_run_program(
-                None,
-                "(check (cond-equal (BaseTerm (Neq (Var \"a\") (Const 0))) (Var \"a\") (Var \"c\")))",
+        assert!(!backend
+            .is_conditionally_equal(
+                &PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                )),
+                &Term::Var("a".into()),
+                &Term::Var("c".into()),
             )
-            .unwrap();
+            .unwrap());
     }
 }
