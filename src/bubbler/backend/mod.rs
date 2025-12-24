@@ -37,6 +37,7 @@ pub(crate) mod bubbler_defns {
     pub const HAS_CVEC_RELATION: &str = "has-cvec";
     pub const HAS_PVEC_RELATION: &str = "has-pvec";
     pub const COND_EQUAL_RELATION: &str = "cond-equal";
+    pub const IMPLIES_RELATION: &str = "implies";
 
     // NOTE(@ninehusky): I'm commenting these out for now. We need these for rewrites
     // like "for all terms in the universe, do X", but I can't really think of
@@ -58,7 +59,7 @@ type CVecStore<L> = InternStore<CVec<L>>;
 type PVecStore = InternStore<PVec>;
 
 pub struct EgglogBackend<L: Language> {
-    egraph: EGraph,
+    pub egraph: EGraph,
     cvec_store: CVecStore<L>,
     pvec_store: PVecStore,
     _marker: std::marker::PhantomData<L>,
@@ -161,9 +162,8 @@ impl<L: Language> EgglogBackend<L> {
             .unwrap();
 
         // 3. Add rulesets and relations.
-        add_ruleset(&mut egraph, bubbler_defns::REWRITE_TERMS_RULESET)
-            .ok()
-            .unwrap();
+        add_ruleset(&mut egraph, bubbler_defns::REWRITE_TERMS_RULESET).unwrap();
+        add_ruleset(&mut egraph, bubbler_defns::PROPAGATE_ANALYSIS_RULESET).unwrap();
 
         add_relation(
             &mut egraph,
@@ -197,10 +197,163 @@ impl<L: Language> EgglogBackend<L> {
                 L::name().to_string(),
             ],
         )
-        .ok()
         .unwrap();
 
+        add_relation(
+            &mut egraph,
+            bubbler_defns::IMPLIES_RELATION,
+            vec![
+                // (implies predterm1 predterm2)
+                bubbler_defns::PREDICATE_DATATYPE.to_string(),
+                bubbler_defns::PREDICATE_DATATYPE.to_string(),
+            ],
+        )
+        .unwrap();
+
+        Self::add_predicate_axioms(&mut egraph);
+
         egraph
+    }
+
+    // This function just adds the core rule about reachability:
+    // if (path a b) and (path b c), then (path a c).
+    fn add_predicate_axioms(egraph: &mut EGraph) {
+        // TODO(@ninehusky): figure out if we need (path a a) for a base case.
+        // I don't think we do, because you're not going to really query that.
+
+        // (implies a c) if (implies a b) and (implies b c).
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Expr(
+                        span!(),
+                        call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![var!("a".to_string()), var!("c".to_string())]
+                        ),
+                    )]),
+                    body: vec![
+                        GenericFact::Fact(call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![var!("a".to_string()), var!("b".to_string())]
+                        )),
+                        GenericFact::Fact(call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![var!("b".to_string()), var!("c".to_string())]
+                        )),
+                    ],
+                    name: "implies-transitivity".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
+
+        // if (cond-equal a b), then (cond-equal b a)
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Expr(
+                        span!(),
+                        call!(
+                            bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                            vec![
+                                var!("cond".to_string()),
+                                var!("rhs".to_string()),
+                                var!("lhs".to_string())
+                            ]
+                        ),
+                    )]),
+                    body: vec![GenericFact::Fact(call!(
+                        bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                        vec![
+                            var!("cond".to_string()),
+                            var!("lhs".to_string()),
+                            var!("rhs".to_string())
+                        ]
+                    ))],
+                    name: "cond-equal-symmetry".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
+
+        // if (implies p q) and (cond-equal q l r), then (cond-equal p l r)
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Expr(
+                        span!(),
+                        call!(
+                            bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                            vec![
+                                var!("p".to_string()),
+                                var!("l".to_string()),
+                                var!("r".to_string())
+                            ]
+                        ),
+                    )]),
+                    body: vec![
+                        GenericFact::Fact(call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![var!("p".to_string()), var!("q".to_string())]
+                        )),
+                        GenericFact::Fact(call!(
+                            bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                            vec![
+                                var!("q".to_string()),
+                                var!("l".to_string()),
+                                var!("r".to_string())
+                            ]
+                        )),
+                    ],
+                    name: "implies-cond-equal".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
+
+        // if (cond-equal p l x) and (cond-equal p r x), then (cond-equal p l r)
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Expr(
+                        span!(),
+                        call!(
+                            bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                            vec![
+                                var!("p".to_string()),
+                                var!("l".to_string()),
+                                var!("r".to_string())
+                            ]
+                        ),
+                    )]),
+                    body: vec![
+                        GenericFact::Fact(call!(
+                            bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                            vec![
+                                var!("p".to_string()),
+                                var!("l".to_string()),
+                                var!("x".to_string())
+                            ]
+                        )),
+                        GenericFact::Fact(call!(
+                            bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                            vec![
+                                var!("p".to_string()),
+                                var!("x".to_string()),
+                                var!("r".to_string())
+                            ]
+                        )),
+                    ],
+                    name: "cond-equal-implies".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
     }
 
     /// Returns a mapping from CVecs to terms in the egraph with those CVecs.
@@ -343,14 +496,7 @@ impl<L: Language> EgglogBackend<L> {
                         // mark the LHS and RHS as conditionally equal under cond if...
                         call!(
                             bubbler_defns::COND_EQUAL_RELATION.to_string(),
-                            vec![
-                                call!(
-                                    bubbler_defns::BASE_TERM.to_string(),
-                                    vec![cond.clone().into()]
-                                ),
-                                lhs.clone().into(),
-                                rhs.clone().into()
-                            ]
+                            vec![cond.clone().into(), lhs.clone().into(), rhs.clone().into()]
                         ),
                     )]),
                     // ...we can see that the LHS is in the egraph.
@@ -375,7 +521,29 @@ impl<L: Language> EgglogBackend<L> {
     }
 
     pub fn register_implication(&mut self, implication: &Implication<L>) -> Result<(), String> {
-        todo!()
+        let lhs = &implication.from;
+        let rhs = &implication.to;
+        self.egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Expr(
+                        span!(),
+                        // mark the LHS and RHS as implied if...
+                        call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![lhs.clone().into(), rhs.clone().into()]
+                        ),
+                    )]),
+                    // ...we can see that the LHS is in the egraph.
+                    body: vec![GenericFact::Fact(lhs.clone().into())],
+                    name: format!("{}", implication),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .map_err(|e| format!("Failed to register implication: {:?}", e).to_string())?;
+
+        Ok(())
     }
 
     pub fn add_term(&mut self, term: Term<L>, cvec: Option<CVec<L>>) -> Result<(), String> {
@@ -457,28 +625,71 @@ impl<L: Language> EgglogBackend<L> {
 
     pub fn run_implications(&mut self) -> Result<(), String> {
         self.egraph
-            .run_program(vec![GenericCommand::RunSchedule(GenericSchedule::Run(
+            .run_program(vec![GenericCommand::RunSchedule(GenericSchedule::Repeat(
                 span!(),
-                GenericRunConfig {
-                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
-                    until: None,
-                },
+                7,
+                Box::new(GenericSchedule::Run(
+                    span!(),
+                    GenericRunConfig {
+                        ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                        until: None,
+                    },
+                )),
             ))])
-            .map_err(|e| format!("Failed to run rewrites: {:?}", e))?;
+            .map_err(|e| format!("Failed to run implications: {:?}", e))?;
         Ok(())
     }
 
     pub fn run_rewrites(&mut self) -> Result<(), String> {
         self.egraph
-            .run_program(vec![GenericCommand::RunSchedule(GenericSchedule::Run(
+            .run_program(vec![GenericCommand::RunSchedule(GenericSchedule::Repeat(
                 span!(),
-                GenericRunConfig {
-                    ruleset: bubbler_defns::REWRITE_TERMS_RULESET.to_string(),
-                    until: None,
-                },
+                7,
+                Box::new(GenericSchedule::Run(
+                    span!(),
+                    GenericRunConfig {
+                        ruleset: bubbler_defns::REWRITE_TERMS_RULESET.to_string(),
+                        until: None,
+                    },
+                )),
             ))])
             .map_err(|e| format!("Failed to run rewrites: {:?}", e))?;
         Ok(())
+    }
+
+    /// In the current view of the e-graph, are `lhs` and `rhs` equal
+    /// under the condition `cond`?
+    /// Note that like with all e-graph queries, you may get different
+    /// results depending on when you run this function, since the e-graph
+    /// learns new facts as you run rewrites and implications.
+    /// So to be clear -- if this returns `true`, then `lhs` and `rhs` are
+    /// definitely conditionally equal under `cond`. If it returns `false`,
+    /// the egraph hasn't figured out that they are conditionally equal.
+    pub fn is_conditionally_equal(
+        &mut self,
+        cond: &PredicateTerm<L>,
+        lhs: &Term<L>,
+        rhs: &Term<L>,
+    ) -> Result<bool, String> {
+        // First, check to see: are the lhs and rhs regularly equal?
+        if self.is_equal(lhs, rhs)? {
+            return Ok(true);
+        }
+
+        let result = self.egraph.run_program(vec![GenericCommand::Check(
+            span!(),
+            vec![GenericFact::Fact(Expr::Call(
+                span!(),
+                bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                vec![cond.clone().into(), lhs.clone().into(), rhs.clone().into()],
+            ))],
+        )]);
+
+        match result {
+            Ok(_) => Ok(true),
+            Err(egglog::Error::CheckError(_, _)) => Ok(false),
+            Err(e) => Err(format!("Failed to check conditional equality: {:?}", e)),
+        }
     }
 
     pub fn is_equal(&mut self, lhs: &Term<L>, rhs: &Term<L>) -> Result<bool, String> {
@@ -492,13 +703,48 @@ impl<L: Language> EgglogBackend<L> {
         )]);
 
         match result {
-            Ok(outputs) => Ok(true),
-            Err(e) => {
-                if let egglog::Error::CheckError(_, _) = e {
-                    Ok(false)
-                } else {
-                    Err(format!("Failed to check equality: {:?}", e))
+            Ok(_) => Ok(true),
+            Err(egglog::Error::CheckError(_, _)) => Ok(false),
+            Err(e) => Err(format!("Failed to check equality: {:?}", e)),
+        }
+    }
+
+    pub fn is_implied(
+        &mut self,
+        lhs: &PredicateTerm<L>,
+        rhs: &PredicateTerm<L>,
+    ) -> Result<bool, String> {
+        let result = self.egraph.run_program(vec![GenericCommand::Check(
+            span!(),
+            vec![GenericFact::Fact(call!(
+                bubbler_defns::IMPLIES_RELATION.to_string(),
+                vec![lhs.clone().into(), rhs.clone().into()]
+            ))],
+        )]);
+
+        match result {
+            Ok(_) => Ok(true),
+            Err(egglog::Error::CheckError(_, _)) => Ok(false),
+            Err(e) => Err(format!("Failed to check implication: {:?}", e)),
+        }
+    }
+}
+
+impl<L: Language> From<egglog::ast::Expr> for PredicateTerm<L> {
+    fn from(value: egglog::ast::Expr) -> Self {
+        match value {
+            egglog::ast::GenericExpr::Call(_, op, args) => match op.as_str() {
+                bubbler_defns::BASE_TERM => {
+                    assert_eq!(args.len(), 1);
+                    let term: Term<L> = args.into_iter().next().unwrap().into();
+                    PredicateTerm { term }
                 }
+                other => {
+                    panic!("Expected BaseTerm call for predicate term, got {}.", other);
+                }
+            },
+            _ => {
+                panic!("Expected call expression for predicate term.");
             }
         }
     }
@@ -574,12 +820,98 @@ impl<L: Language> From<Term<L>> for egglog::ast::Expr {
     }
 }
 
+impl<L: Language> From<PredicateTerm<L>> for Expr {
+    fn from(pred_term: PredicateTerm<L>) -> Self {
+        call!(
+            bubbler_defns::BASE_TERM.to_string(),
+            vec![pred_term.term.into()]
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use egglog::CommandOutput;
+    use egglog::{CommandOutput, SerializeConfig};
 
     use super::*;
     use crate::test_langs::llvm::{LLVMLang, LLVMLangOp};
+
+    #[test]
+    fn add_implication_ok() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+
+        // x < 1  =>  x != 1
+        backend
+            .register_implication(
+                &Implication::new(
+                    PredicateTerm {
+                        term: Term::Call(
+                            LLVMLangOp::Lt,
+                            vec![Term::Var("x".into()), Term::Const(1.into())],
+                        ),
+                    },
+                    PredicateTerm {
+                        term: Term::Call(
+                            LLVMLangOp::Neq,
+                            vec![Term::Var("x".into()), Term::Const(1.into())],
+                        ),
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        // x != 1  =>  x + 1 != 2
+        backend
+            .register_implication(
+                &Implication::new(
+                    PredicateTerm {
+                        term: Term::Call(
+                            LLVMLangOp::Neq,
+                            vec![Term::Var("x".into()), Term::Const(1.into())],
+                        ),
+                    },
+                    PredicateTerm {
+                        term: Term::Call(
+                            LLVMLangOp::Neq,
+                            vec![
+                                Term::Call(
+                                    LLVMLangOp::Add,
+                                    vec![Term::Var("x".into()), Term::Const(1.into())],
+                                ),
+                                Term::Const(2.into()),
+                            ],
+                        ),
+                    },
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        // Add a predicate that matches the LHS of the first implication.
+        backend
+            .add_predicate(
+                PredicateTerm {
+                    term: Term::Call(
+                        LLVMLangOp::Lt,
+                        vec![Term::Var("a".into()), Term::Const(1.into())],
+                    ),
+                },
+                None,
+            )
+            .unwrap();
+
+        backend.run_implications().unwrap();
+
+        // Now, we should have that (implies (a < 1) (a + 1 != 2)).
+        backend
+            .egraph
+            .parse_and_run_program(
+                None,
+                "(check (implies (BaseTerm (Lt (Var \"a\") (Const 1))) (BaseTerm (Neq (Add (Var \"a\") (Const 1)) (Const 2)))))",
+            )
+            .unwrap();
+    }
 
     #[test]
     fn add_term_ok() {
@@ -690,10 +1022,10 @@ mod tests {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         // y / y ~> 1 if y != 0
         let rewrite = Rewrite::Conditional {
-            cond: Term::Call(
+            cond: PredicateTerm::from_term(Term::Call(
                 LLVMLangOp::Neq,
                 vec![Term::Hole("?y".into()), Term::Const(0.into())],
-            ),
+            )),
             lhs: Term::Call(
                 LLVMLangOp::Div,
                 vec![Term::Hole("?y".into()), Term::Hole("?y".into())],
@@ -802,5 +1134,84 @@ mod tests {
         assert_eq!(terms.len(), 2);
         assert!(terms.contains(&predicate_a));
         assert!(terms.contains(&predicate_b));
+    }
+
+    #[test]
+    fn conditionally_equal_ok() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+
+        // Register the conditional rewrite:
+        // x != 0  =>  x / x == 1
+
+        // introduce three variables, a, b, c.
+        backend.add_term(Term::Var("a".into()), None).unwrap();
+        backend.add_term(Term::Var("b".into()), None).unwrap();
+        backend.add_term(Term::Var("c".into()), None).unwrap();
+
+        // introduce two predicates, (!= a 0) and (> a 0).
+        backend
+            .add_predicate(
+                PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Neq,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                )),
+                None,
+            )
+            .unwrap();
+        backend
+            .add_predicate(
+                PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                )),
+                None,
+            )
+            .unwrap();
+
+        // add an implication: a > 0 => a != 0
+        backend
+            .register_implication(
+                &Implication::new(
+                    PredicateTerm::from_term(Term::Call(
+                        LLVMLangOp::Gt,
+                        vec![Term::Var("a".into()), Term::Const(0.into())],
+                    )),
+                    PredicateTerm::from_term(Term::Call(
+                        LLVMLangOp::Neq,
+                        vec![Term::Var("a".into()), Term::Const(0.into())],
+                    )),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        // mark that under condition p, a == b
+        backend
+            .egraph
+            .parse_and_run_program(
+                None,
+                "(cond-equal (BaseTerm (Neq (Var \"a\") (Const 0))) (Var \"a\") (Var \"b\"))",
+            )
+            .unwrap();
+
+        // mark that under condition q, b == c
+        backend
+            .egraph
+            .parse_and_run_program(
+                None,
+                "(cond-equal (BaseTerm (Gt (Var \"a\") (Const 0))) (Var \"b\") (Var \"c\"))",
+            )
+            .unwrap();
+
+        assert!(!backend
+            .is_conditionally_equal(
+                &PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                )),
+                &Term::Var("a".into()),
+                &Term::Var("c".into()),
+            )
+            .unwrap());
     }
 }

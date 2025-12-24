@@ -9,11 +9,12 @@
 mod graph;
 pub mod implication;
 
+pub use implication::Implication;
+
 use std::collections::HashMap;
 
-use crate::language::{Language, term::PredicateTerm};
+use crate::language::{term::PredicateTerm, Language};
 use graph::{Graph, NodeId};
-use implication::Implication;
 
 /// A colored DAG structure for managing conditional equivalences.
 /// The nodes in the graph are conditions (colors), and the edges are
