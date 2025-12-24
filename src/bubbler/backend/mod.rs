@@ -59,7 +59,7 @@ type CVecStore<L> = InternStore<CVec<L>>;
 type PVecStore = InternStore<PVec>;
 
 pub struct EgglogBackend<L: Language> {
-    egraph: EGraph,
+    pub egraph: EGraph,
     cvec_store: CVecStore<L>,
     pvec_store: PVecStore,
     _marker: std::marker::PhantomData<L>,
@@ -583,7 +583,25 @@ impl<L: Language> EgglogBackend<L> {
         lhs: &PredicateTerm<L>,
         rhs: &PredicateTerm<L>,
     ) -> Result<bool, String> {
-        todo!()
+        let result = self.egraph.run_program(vec![GenericCommand::Check(
+            span!(),
+            vec![GenericFact::Fact(call!(
+                bubbler_defns::IMPLIES_RELATION.to_string(),
+                vec![lhs.clone().into(), rhs.clone().into()]
+            ))],
+        )]);
+
+        match result {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                if let egglog::Error::CheckError(_, _) = e {
+                    println!("couldn't find implication linking {:?} to {:?}", lhs, rhs);
+                    Ok(false)
+                } else {
+                    Err(format!("Failed to check implication: {:?}", e))
+                }
+            }
+        }
     }
 }
 

@@ -1,7 +1,9 @@
+use egglog::SerializeConfig;
+
 use crate::{
     bubbler::{backend::EgglogBackend, schedule::Minimization, Bubbler, InferredFacts},
     colors::implication::Implication,
-    language::{rewrite::Rewrite, Language},
+    language::{rewrite::Rewrite, Language, PredicateTerm},
 };
 
 use super::ImplicationScoreFn;
@@ -53,13 +55,11 @@ impl<L: Language> Minimization<L> for BasicRewriteMinimize<L> {
         let mut chosen: Vec<Rewrite<L>> = self.existing.clone();
 
         // 2. Add the lhs and rhs of each candidate to the backend.
-        let mut initial = vec![];
         for rw in candidates.iter() {
             let lhs = rw.lhs_concrete();
             let rhs = rw.rhs_concrete();
             backend.add_term(lhs.clone(), None).unwrap();
             backend.add_term(rhs.clone(), None).unwrap();
-            initial.push((rw, lhs, rhs));
         }
 
         // 3. Iteratively add rewrites and remove redundant ones.
@@ -83,7 +83,7 @@ impl<L: Language> Minimization<L> for BasicRewriteMinimize<L> {
 }
 
 #[cfg(test)]
-mod tests {
+mod rw_tests {
     use crate::{
         bubbler::minimization::score_fns,
         language::Term,
@@ -225,12 +225,19 @@ impl<L: Language> Minimization<L> for BasicImplicationMinimize<L> {
 
         let mut chosen: Vec<Implication<L>> = self.existing.clone();
 
+        for imp in candidates.iter() {
+            let pre = imp.lhs_concrete();
+            let post = imp.rhs_concrete();
+            backend.add_predicate(pre.clone(), None).unwrap();
+            backend.add_predicate(post.clone(), None).unwrap();
+        }
+
         // 2. Iteratively add implications and remove redundant ones.
         while let Some(selected) = candidates.pop() {
             chosen.push(selected.clone());
             backend.register_implication(&selected).unwrap();
 
-            backend.run_rewrites().unwrap();
+            backend.run_implications().unwrap();
 
             // Remove redundant candidates.
             candidates.retain(|imp| {
@@ -242,5 +249,83 @@ impl<L: Language> Minimization<L> for BasicImplicationMinimize<L> {
         }
 
         Ok(InferredFacts::Implications(chosen))
+    }
+}
+
+#[cfg(test)]
+mod imp_tests {
+    use crate::{
+        bubbler::minimization::score_fns::implication_score_fns,
+        language::{PredicateTerm, Term},
+        test_langs::llvm::{LLVMLang, LLVMLangOp},
+    };
+
+    use super::*;
+
+    #[test]
+    fn basic_implication_test() {
+        let mut backend = EgglogBackend::<LLVMLang>::new();
+        let a_lt_zero: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
+            LLVMLangOp::Lt,
+            vec![Term::Var("a".into()), Term::Const(0)],
+        ));
+
+        let a_lt_neg_one: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
+            LLVMLangOp::Lt,
+            vec![Term::Var("a".into()), Term::Const(-1)],
+        ));
+
+        let a_lt_neg_two: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
+            LLVMLangOp::Lt,
+            vec![Term::Var("a".into()), Term::Const(-2)],
+        ));
+
+        let a_lt_neg_three: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
+            LLVMLangOp::Lt,
+            vec![Term::Var("a".into()), Term::Const(-3)],
+        ));
+
+        // from these, there are O(n^2) implications.
+        let candidates = vec![
+            // a < -2 --> a < 0
+            Implication::new(a_lt_neg_two.clone(), a_lt_zero.clone()).unwrap(),
+            // a < -1 --> a < 0
+            Implication::new(a_lt_neg_one.clone(), a_lt_zero.clone()).unwrap(),
+            // a < -3 --> a < 0
+            Implication::new(a_lt_neg_three.clone(), a_lt_zero.clone()).unwrap(),
+        ];
+
+        let existing = vec![
+            // a < -3 --> a < -2
+            Implication::new(a_lt_neg_three.clone(), a_lt_neg_two.clone()).unwrap(),
+            // a < -2 --> a < -1
+            Implication::new(a_lt_neg_two.clone(), a_lt_neg_one.clone()).unwrap(),
+            // a < -1 --> a < 0
+            Implication::new(a_lt_neg_one.clone(), a_lt_zero.clone()).unwrap(),
+        ];
+
+        for imp in &existing {
+            backend.register_implication(imp).unwrap();
+        }
+
+        let minimizer = BasicImplicationMinimize::new(
+            implication_score_fns::prioritize_vars::<LLVMLang>(),
+            existing,
+            1,
+        );
+
+        let minimized = minimizer
+            .minimize(&mut backend, InferredFacts::Implications(candidates))
+            .unwrap();
+
+        let InferredFacts::Implications(minimized) = &minimized else {
+            panic!("Expected implications after minimization.");
+        };
+
+        // Why 3 + 1 and not 3?
+        // When we minimize, we add one candidate to the backend first, and then
+        // remove redundants. So even though all three candidates are redundant,
+        // we will have added one of them before checking for redundancy.
+        assert_eq!(minimized.len(), 3 + 1);
     }
 }
