@@ -849,7 +849,8 @@ mod tests {
                             LLVMLangOp::Lt,
                             vec![Term::Var("x".into()), Term::Const(1.into())],
                         ),
-                    },
+                    }
+                    .into(),
                     PredicateTerm {
                         term: Term::Call(
                             LLVMLangOp::Neq,
@@ -870,7 +871,8 @@ mod tests {
                             LLVMLangOp::Neq,
                             vec![Term::Var("x".into()), Term::Const(1.into())],
                         ),
-                    },
+                    }
+                    .into(),
                     PredicateTerm {
                         term: Term::Call(
                             LLVMLangOp::Neq,
@@ -1175,7 +1177,8 @@ mod tests {
                     PredicateTerm::from_term(Term::Call(
                         LLVMLangOp::Gt,
                         vec![Term::Var("a".into()), Term::Const(0.into())],
-                    )),
+                    ))
+                    .into(),
                     PredicateTerm::from_term(Term::Call(
                         LLVMLangOp::Neq,
                         vec![Term::Var("a".into()), Term::Const(0.into())],

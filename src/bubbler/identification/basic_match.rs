@@ -1,7 +1,9 @@
+//! This file contains the matching strategies used in Chompy's implementation.
+
 use crate::{
     bubbler::{backend::EgglogBackend, schedule::Identification, Bubbler, InferredFacts},
     colors::implication::Implication,
-    language::{rewrite::Rewrite, Language, PVec},
+    language::{rewrite::Rewrite, CVec, Language, PVec},
 };
 
 use super::IdentificationConfig;
@@ -59,6 +61,11 @@ impl<L: Language> Identification<L> for CvecMatch<L> {
 /// Formally, two predicates with pvecs `p, q` are a match if
 /// `\forall i. p[i] => q[i]`. Like in the real world, implications in
 /// the forward directions do not guarantee implications in the reverse direction.
+///
+// NOTE: pvec matching only works for predicates. If you want to discover
+// predicates which hold for _any_ term, use a different matching strategy
+// (which I'll implement soon!).
+// TODO(@ninehusky): implement the above.
 pub struct PvecMatch<L: Language> {
     cfg: IdentificationConfig,
     _marker: std::marker::PhantomData<L>,
@@ -109,7 +116,7 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
             for from_term in from_terms {
                 for to_term in to_terms {
                     let implication = Implication {
-                        from: from_term.clone(),
+                        from: from_term.clone().into(),
                         to: to_term.clone(),
                     };
                     candidates.push(implication);
@@ -210,5 +217,219 @@ mod tests {
             panic!("Expected implications inferred.");
         };
         assert_eq!(inferred.len(), 2);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConditionalCvecMatch<L: Language> {
+    cfg: IdentificationConfig,
+    _marker: std::marker::PhantomData<L>,
+}
+
+impl<L: Language> ConditionalCvecMatch<L> {
+    pub fn new(cfg: IdentificationConfig) -> ConditionalCvecMatch<L> {
+        Self {
+            cfg,
+            _marker: std::marker::PhantomData::<L>,
+        }
+    }
+
+    fn pvec_implies_cvecs_equal(pvec: &PVec, cvec1: &CVec<L>, cvec2: &CVec<L>) -> bool {
+        assert_eq!(pvec.len(), cvec1.len());
+        assert_eq!(cvec1.len(), cvec2.len());
+
+        for i in 0..pvec.len() {
+            let p = pvec[i];
+            let c1 = &cvec1[i];
+            let c2 = &cvec2[i];
+
+            // p[i] -> c[i] == c'[i]
+            if p && c1 != c2 {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+impl<L: Language> Identification<L> for ConditionalCvecMatch<L> {
+    fn identify(&self, backend: &mut EgglogBackend<L>) -> Result<InferredFacts<L>, String> {
+        if self.cfg.mode != super::IdentificationMode::Rewrites {
+            return Err("ConditionalCvecMatch only supports rewrite identification.".into());
+        }
+        let cvec_map = backend.get_cvec_map();
+        let pvec_map = backend.get_pvec_map();
+
+        let mut vector_matches: Vec<(PVec, CVec<L>, CVec<L>)> = vec![];
+        for (i, cvec1) in cvec_map.keys().cloned().enumerate() {
+            for cvec2 in cvec_map.keys().cloned().skip(i + 1) {
+                // find the pvecs which make cvec1 = cvec2.
+                for pvec in pvec_map.keys() {
+                    if Self::pvec_implies_cvecs_equal(pvec, &cvec1, &cvec2) {
+                        vector_matches.push((pvec.clone(), cvec1.clone(), cvec2.clone()));
+                    }
+                }
+            }
+        }
+
+        let mut candidates: Vec<Rewrite<L>> = vec![];
+
+        // Now, materialize the matches into candidates.
+        for (pvec, cvec1, cvec2) in vector_matches {
+            let cond = pvec_map.get(&pvec).unwrap();
+            let terms1 = cvec_map.get(&cvec1).unwrap();
+            let terms2 = cvec_map.get(&cvec2).unwrap();
+
+            for cond_term in cond {
+                for term1 in terms1 {
+                    for term2 in terms2 {
+                        if backend.is_conditionally_equal(cond_term, term1, term2)? {
+                            continue;
+                        }
+                        let fwds =
+                            Rewrite::new(Some(cond_term.clone()), term1.clone(), term2.clone());
+                        if let Ok(rw) = fwds {
+                            candidates.push(rw);
+                        }
+                        let bwds =
+                            Rewrite::new(Some(cond_term.clone()), term2.clone(), term1.clone());
+                        if let Ok(rw) = bwds {
+                            candidates.push(rw);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(InferredFacts::Rewrites(candidates))
+    }
+}
+
+#[cfg(test)]
+pub mod cond_cvec_match_test {
+    use egglog::SerializeConfig;
+
+    use crate::{
+        bubbler::{identification::IdentificationMode, BubblerConfig},
+        language::{PredicateTerm, Term},
+        test_langs::llvm::{LLVMLang, LLVMLangOp},
+    };
+
+    use super::*;
+    #[test]
+    fn conditional_cvec_match_finds_conditional_rewrites() {
+        let mut bubbler =
+            Bubbler::<LLVMLang>::new(BubblerConfig::new(vec!["x".into()], vec![-1, 0, 1]));
+        let mut backend = EgglogBackend::<LLVMLang>::new();
+        backend
+            .register(
+                &Rewrite::new(
+                    Some(PredicateTerm::from_term(Term::Call(
+                        LLVMLangOp::Lt,
+                        vec![Term::Var("x".into()), Term::Const(0)],
+                    ))),
+                    Term::Call(
+                        LLVMLangOp::Div,
+                        vec![Term::Var("x".into()), Term::Var("x".into())],
+                    ),
+                    Term::Const(1),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+
+        backend
+            .register_implication(&Implication {
+                from: PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Lt,
+                    vec![Term::Var("x".into()), Term::Var("y".into())],
+                ))
+                .into(),
+                to: PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Neq,
+                    vec![Term::Var("x".into()), Term::Var("y".into())],
+                )),
+            })
+            .unwrap();
+
+        let x_div_x = Term::Call(
+            LLVMLangOp::Div,
+            vec![Term::Var("x".into()), Term::Var("x".into())],
+        );
+
+        backend
+            .add_term(
+                Term::Const(1),
+                Some(Term::Const(1).evaluate(&bubbler.environment)),
+            )
+            .unwrap();
+
+        backend
+            .add_term(
+                x_div_x.clone(),
+                Some(x_div_x.evaluate(&bubbler.environment)),
+            )
+            .unwrap();
+
+        let x_gt_0 = Term::Call(LLVMLangOp::Gt, vec![Term::Var("x".into()), Term::Const(0)]);
+        backend
+            .add_predicate(
+                PredicateTerm::from_term(x_gt_0.clone()),
+                Some(x_gt_0.evaluate(&bubbler.environment).to_pvec()),
+            )
+            .unwrap();
+
+        let x_lt_0 = Term::Call(LLVMLangOp::Lt, vec![Term::Var("x".into()), Term::Const(0)]);
+        backend
+            .add_predicate(
+                PredicateTerm::from_term(x_lt_0.clone()),
+                Some(x_lt_0.evaluate(&bubbler.environment).to_pvec()),
+            )
+            .unwrap();
+
+        let x_neq_0 = Term::Call(LLVMLangOp::Neq, vec![Term::Var("x".into()), Term::Const(0)]);
+        backend
+            .add_predicate(
+                PredicateTerm::from_term(x_neq_0.clone()),
+                Some(x_neq_0.evaluate(&bubbler.environment).to_pvec()),
+            )
+            .unwrap();
+
+        // NOTE: the order here is pretty important. If you run implications first, then
+        // rewrites, then the backend doesn't discover the `cond-equal` fact needed to prune
+        // away redundant rewrites.
+        backend.run_rewrites().unwrap();
+        backend.run_implications().unwrap();
+
+        let identifier = ConditionalCvecMatch::<LLVMLang>::new(IdentificationConfig {
+            mode: IdentificationMode::Rewrites,
+            validate_now: false,
+        });
+
+        let candidates = identifier.identify(&mut backend).unwrap();
+
+        let InferredFacts::Rewrites(candidates) = candidates else {
+            panic!("Expected rewrites inferred.");
+        };
+
+        assert_eq!(candidates.len(), 2);
+        assert!(candidates.contains(
+            &Rewrite::new(
+                Some(PredicateTerm::from_term(x_gt_0)),
+                x_div_x.clone(),
+                Term::Const(1),
+            )
+            .unwrap()
+        ));
+
+        assert!(candidates.contains(
+            &Rewrite::new(
+                Some(PredicateTerm::from_term(x_neq_0)),
+                x_div_x.clone(),
+                Term::Const(1),
+            )
+            .unwrap()
+        ));
     }
 }
