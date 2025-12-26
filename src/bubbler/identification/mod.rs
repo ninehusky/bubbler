@@ -1,4 +1,5 @@
 mod basic_match;
+mod bubbler_match;
 
 /// Describes the kind fact that is being identified.
 #[derive(Clone, Debug)]
