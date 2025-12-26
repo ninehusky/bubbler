@@ -285,23 +285,22 @@ mod imp_tests {
             vec![Term::Var("a".into()), Term::Const(-3)],
         ));
 
-        // from these, there are O(n^2) implications.
         let candidates = vec![
             // a < -2 --> a < 0
-            Implication::new(a_lt_neg_two.clone(), a_lt_zero.clone()).unwrap(),
+            Implication::new(a_lt_neg_two.clone().into(), a_lt_zero.clone()).unwrap(),
             // a < -1 --> a < 0
-            Implication::new(a_lt_neg_one.clone(), a_lt_zero.clone()).unwrap(),
+            Implication::new(a_lt_neg_one.clone().into(), a_lt_zero.clone()).unwrap(),
             // a < -3 --> a < 0
-            Implication::new(a_lt_neg_three.clone(), a_lt_zero.clone()).unwrap(),
+            Implication::new(a_lt_neg_three.clone().into(), a_lt_zero.clone()).unwrap(),
         ];
 
         let existing = vec![
             // a < -3 --> a < -2
-            Implication::new(a_lt_neg_three.clone(), a_lt_neg_two.clone()).unwrap(),
+            Implication::new(a_lt_neg_three.clone().into(), a_lt_neg_two.clone()).unwrap(),
             // a < -2 --> a < -1
-            Implication::new(a_lt_neg_two.clone(), a_lt_neg_one.clone()).unwrap(),
+            Implication::new(a_lt_neg_two.clone().into(), a_lt_neg_one.clone()).unwrap(),
             // a < -1 --> a < 0
-            Implication::new(a_lt_neg_one.clone(), a_lt_zero.clone()).unwrap(),
+            Implication::new(a_lt_neg_one.clone().into(), a_lt_zero.clone()).unwrap(),
         ];
 
         for imp in &existing {
@@ -310,7 +309,7 @@ mod imp_tests {
 
         let minimizer = BasicImplicationMinimize::new(
             implication_score_fns::prioritize_vars::<LLVMLang>(),
-            existing,
+            existing.clone(),
             1,
         );
 
@@ -326,7 +325,9 @@ mod imp_tests {
         // When we minimize, we add one candidate to the backend first, and then
         // remove redundants. So even though all three candidates are redundant,
         // we will have added one of them before checking for redundancy.
-        assert_eq!(minimized.len(), 3 + 1);
+        // In the real world, this won't happen because every candidate
+        // is never derivable from existing implications alone.
+        assert_eq!(minimized.len(), existing.len() + 1);
     }
 }
 
@@ -402,6 +403,7 @@ impl<L: Language> Minimization<L> for ConditionalRewriteMinimize<L> {
 pub mod cond_rw_tests {
     use crate::{
         bubbler::minimization::score_fns,
+        colors::Condition,
         language::Term,
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
@@ -459,7 +461,8 @@ pub mod cond_rw_tests {
             PredicateTerm::from_term(Term::Call(
                 LLVMLangOp::Gt,
                 vec![Term::Var("a".into()), Term::Const(0)],
-            )),
+            ))
+            .into(),
             PredicateTerm::from_term(Term::Call(
                 LLVMLangOp::Neq,
                 vec![Term::Var("a".into()), Term::Const(0)],

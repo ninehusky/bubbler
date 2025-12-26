@@ -9,7 +9,7 @@
 mod graph;
 pub mod implication;
 
-pub use implication::Implication;
+pub use implication::{Condition, Implication};
 
 use std::collections::HashMap;
 
@@ -59,8 +59,11 @@ impl<L: Language> Lattice<L> {
     }
 
     pub fn add_implication(&mut self, imp: Implication<L>) {
+        let Condition::Predicate(from) = &imp.from else {
+            panic!("LHS of implication is not a term");
+        };
         let to_node = self.fact_node(imp.to);
-        let from_node = self.fact_node(imp.from);
+        let from_node = self.fact_node(from.clone());
         self.graph.add_edge(to_node, from_node);
     }
 
