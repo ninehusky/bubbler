@@ -5,11 +5,13 @@ use crate::{
 
 mod basic_minimize;
 
+pub use basic_minimize::{BasicImplicationMinimize, BasicRewriteMinimize};
+
 #[derive(Clone, Debug)]
 pub struct MinimizationConfig {}
 
-pub type RewriteScoreFn<L> = dyn Fn(&Rewrite<L>) -> i64 + Send + Sync;
-pub type ImplicationScoreFn<L> = dyn Fn(&Implication<L>) -> i64 + Send + Sync;
+pub type RewriteScoreFn<'a, L> = dyn Fn(&Rewrite<L>) -> i64 + Send + Sync + 'a;
+pub type ImplicationScoreFn<'a, L> = dyn Fn(&Implication<L>) -> i64 + Send + Sync + 'a;
 
 pub mod score_fns {
     use crate::{colors::Implication, language::Term};
@@ -18,7 +20,7 @@ pub mod score_fns {
 
     pub mod implication_score_fns {
         use super::*;
-        pub fn prioritize_vars<L: Language>() -> Box<ImplicationScoreFn<L>> {
+        pub fn prioritize_vars<'a, L: Language>() -> Box<ImplicationScoreFn<'a, L>> {
             fn cost<L: Language>(term: &Term<L>) -> i64 {
                 match term {
                     // penalty for constants
@@ -32,8 +34,12 @@ pub mod score_fns {
                 }
             }
             Box::new(|imp: &Implication<L>| {
-                let lhs_cost = cost(&imp.lhs_concrete().term);
-                let rhs_cost = cost(&imp.rhs_concrete().term);
+                let lhs_term = match &imp.from {
+                    crate::colors::Condition::Predicate(p) => &p.term,
+                    crate::colors::Condition::Term(t) => t,
+                };
+                let lhs_cost = cost(lhs_term);
+                let rhs_cost = cost(&imp.to.term);
                 lhs_cost + rhs_cost
             })
         }
@@ -42,7 +48,7 @@ pub mod score_fns {
     pub mod rewrite_score_fns {
         use super::*;
 
-        pub fn prioritize_vars<L: Language>() -> Box<RewriteScoreFn<L>> {
+        pub fn prioritize_vars<'a, L: Language>() -> Box<RewriteScoreFn<'a, L>> {
             fn cost<L: Language>(term: &Term<L>) -> i64 {
                 match term {
                     // penalty for constants
@@ -67,7 +73,7 @@ pub mod score_fns {
             })
         }
 
-        pub fn ast_size<L: Language>() -> Box<RewriteScoreFn<L>> {
+        pub fn ast_size<'a, L: Language>() -> Box<RewriteScoreFn<'a, L>> {
             Box::new(|rw: &Rewrite<L>| {
                 let cond_size = match rw {
                     Rewrite::Conditional { cond, .. } => cond.term.size(),

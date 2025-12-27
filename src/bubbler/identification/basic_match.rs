@@ -78,6 +78,19 @@ impl<L: Language> PvecMatch<L> {
             _marker: std::marker::PhantomData::<L>,
         }
     }
+
+    fn is_bad_pvec(pvec: PVec) -> bool {
+        // A pvec which is all false is useless.
+        if pvec.iter().all(|b| !*b) {
+            return true;
+        }
+
+        // A pvec which is all true is useless.
+        if pvec.iter().all(|b| *b) {
+            return true;
+        }
+        false
+    }
 }
 
 impl<L: Language> Identification<L> for PvecMatch<L> {
@@ -89,7 +102,13 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
         let mut matching_pvecs: Vec<(PVec, PVec)> = vec![];
 
         for pvec1 in pvecs.clone() {
+            if Self::is_bad_pvec(pvec1.clone()) {
+                continue;
+            }
             for pvec2 in pvecs.clone() {
+                if Self::is_bad_pvec(pvec2.clone()) {
+                    continue;
+                }
                 if pvec1 == pvec2 {
                     continue;
                 }
@@ -115,13 +134,15 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
 
             for from_term in from_terms {
                 for to_term in to_terms {
-                    let implication = Implication {
-                        from: from_term.clone().into(),
-                        to: to_term.clone(),
-                    };
+                    let implication =
+                        Implication::new(from_term.clone().into(), to_term.clone()).unwrap();
                     candidates.push(implication);
                 }
             }
+        }
+
+        for c in candidates.iter() {
+            println!("Inferred implication: {}", c);
         }
         Ok(InferredFacts::Implications(candidates))
     }
@@ -131,7 +152,7 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
 mod tests {
     use crate::{
         bubbler::{
-            enumeration::{basic_enumerate::BasicEnumerate, EnumerationConfig, EnumerationMode},
+            enumeration::{BasicEnumerate, EnumerationConfig, EnumerationMode},
             identification::{IdentificationConfig, IdentificationMode},
             schedule::{BubblerAction, Enumeration, Identification},
             BubblerConfig,

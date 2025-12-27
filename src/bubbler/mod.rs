@@ -1,5 +1,9 @@
 use backend::EgglogBackend;
-use schedule::BubblerAction;
+use identification::{IdentificationConfig, IdentificationMode, PvecMatch};
+use minimization::score_fns::implication_score_fns;
+use minimization::BasicImplicationMinimize;
+use ruler::enumo::Workload;
+use schedule::{BubblerAction, Enumeration, Identification, Minimization};
 
 use crate::colors::implication::Implication;
 use crate::language::constant::BubbleConstant;
@@ -12,6 +16,18 @@ mod enumeration;
 mod identification;
 mod minimization;
 mod schedule;
+
+use enumeration::BasicEnumerate;
+
+type RewriteFacts<L> = InferredFacts<L>;
+type ImplicationFacts<L> = InferredFacts<L>;
+
+/// The stuff that Bubbler figures out.
+#[derive(Debug, Clone)]
+pub enum InferredFacts<L: Language> {
+    Implications(Vec<Implication<L>>),
+    Rewrites(Vec<Rewrite<L>>),
+}
 
 pub struct BubblerConfig<L: Language> {
     pub vars: Vec<String>,
@@ -46,6 +62,98 @@ impl<L: Language> Bubbler<L> {
             rules: vec![],
             implications: vec![],
         }
+    }
+
+    /// Find implications in the given `workload` of predicates. Uses the Bubbler's
+    /// current inferred rules and implications to help prune redundant implications.
+    /// Returns the implications found.
+    pub fn find_implications(&self, wkld: &Workload) -> ImplicationFacts<L> {
+        let mut backend = self.new_backend();
+
+        // 1. Enumerate predicates in the workload.
+        let enumerator = BasicEnumerate::new(
+            enumeration::EnumerationConfig {
+                mode: enumeration::EnumerationMode::Predicates,
+                evaluate: true,
+            },
+            self.environment.clone(),
+        );
+
+        enumerator
+            .enumerate_bubbler(&mut backend, wkld.clone())
+            .unwrap();
+
+        // 2. Identify candidates for implications from the predicates.
+        let imp_candidates = PvecMatch::new(IdentificationConfig {
+            mode: IdentificationMode::Implications,
+            validate_now: false,
+        })
+        .identify(&mut backend)
+        .unwrap();
+
+        let score_fn = implication_score_fns::prioritize_vars();
+
+        // 3. Using what we know, minimize the candidates to only keep the best ones.
+        let minimizer: BasicImplicationMinimize<L> =
+            BasicImplicationMinimize::new(Box::new(score_fn), self.implications.clone(), 1);
+
+        let found = minimizer.minimize(&mut backend, imp_candidates).unwrap();
+
+        let InferredFacts::Implications(imps) = found else {
+            panic!("Implication minimizer returned non-implication facts");
+        };
+
+        // set difference between self.implications and `found.`
+        let delta = imps
+            .into_iter()
+            .filter(|imp| !self.implications.contains(imp))
+            .collect();
+
+        InferredFacts::Implications(delta)
+    }
+
+    /// Using the Bubbler's current inferred rules and implications,
+    /// discover new rewrites and implications from the given `workload`
+    /// and addthem to the Bubbler's knowledge base.
+    /// We will almost certainly change this to have more granularity.
+    /// The values returned are the newly inferred rewrites and implications.
+    pub fn run_workload(
+        &mut self,
+        wkld: &Workload,
+        pred_wkld: &Workload,
+    ) -> (RewriteFacts<L>, ImplicationFacts<L>) {
+        todo!()
+        // // 1. Enumerate conditions in the workload.
+        // let mut backend = self.new_backend();
+
+        // let enumerator = BasicEnumerate::new(
+        //     enumeration::EnumerationConfig {
+        //         mode: enumeration::EnumerationMode::Predicates,
+        //         evaluate: true,
+        //     },
+        //     self.environment.clone(),
+        // );
+
+        // enumerator
+        //     .enumerate_bubbler(&mut backend, pred_wkld.clone())
+        //     .unwrap();
+
+        // // 2. Identify candidates for implications from the predicates.
+        // let imp_candidates =
+
+        // // 1. Enumerate terms in the workload.
+        // let enumerator = BasicEnumerate::new(
+        //     enumeration::EnumerationConfig {
+        //         mode: enumeration::EnumerationMode::Terms,
+        //         evaluate: true,
+        //     },
+        //     self.environment.clone(),
+        // );
+        // enumerator
+        //     .enumerate_bubbler(&mut backend, wkld.clone())
+        //     .unwrap();
+        // // 2. Enumerate predicates in the workload.
+        // // 2. Identify candidates.
     }
 
     /// Returns a new `EgglogBackend` that has been initialized with the Bubbler's
@@ -157,11 +265,4 @@ impl<L: Language> Bubbler<L> {
         backend.add_term(term.clone(), cvec).unwrap();
         Ok(())
     }
-}
-
-/// The stuff that Bubbler figures out.
-#[derive(Debug, Clone)]
-pub enum InferredFacts<L: Language> {
-    Implications(Vec<Implication<L>>),
-    Rewrites(Vec<Rewrite<L>>),
 }

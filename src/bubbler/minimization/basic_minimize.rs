@@ -9,9 +9,9 @@ use crate::{
 use super::ImplicationScoreFn;
 use super::RewriteScoreFn;
 
-pub struct BasicRewriteMinimize<L: Language> {
+pub struct BasicRewriteMinimize<'a, L: Language> {
     /// A scoring function for each rewrite. Low means better!
-    score_fn: Box<RewriteScoreFn<L>>,
+    score_fn: Box<RewriteScoreFn<'a, L>>,
     existing: Vec<Rewrite<L>>,
     step_size: usize,
     _marker: std::marker::PhantomData<L>,
@@ -21,9 +21,9 @@ pub struct BasicRewriteMinimize<L: Language> {
 /// Until the `candidates` are empty:
 /// 1. Pick a fact to add.
 /// 2. Remove all facts in `candidates` that are now redundant.
-impl<L: Language> BasicRewriteMinimize<L> {
+impl<'a, L: Language> BasicRewriteMinimize<'a, L> {
     pub fn new(
-        score_fn: Box<RewriteScoreFn<L>>,
+        score_fn: Box<RewriteScoreFn<'a, L>>,
         existing: Vec<Rewrite<L>>,
         step_size: usize,
     ) -> Self {
@@ -36,7 +36,7 @@ impl<L: Language> BasicRewriteMinimize<L> {
     }
 }
 
-impl<L: Language> Minimization<L> for BasicRewriteMinimize<L> {
+impl<'a, L: Language> Minimization<L> for BasicRewriteMinimize<'a, L> {
     fn minimize(
         &self,
         backend: &mut EgglogBackend<L>,
@@ -180,9 +180,9 @@ mod rw_tests {
     }
 }
 
-pub struct BasicImplicationMinimize<L: Language> {
+pub struct BasicImplicationMinimize<'a, L: Language> {
     /// A scoring function for each rewrite. Low means better!
-    score_fn: Box<ImplicationScoreFn<L>>,
+    score_fn: Box<ImplicationScoreFn<'a, L>>,
     existing: Vec<Implication<L>>,
     step_size: usize,
     _marker: std::marker::PhantomData<L>,
@@ -192,9 +192,9 @@ pub struct BasicImplicationMinimize<L: Language> {
 /// Until the `candidates` are empty:
 /// 1. Pick a fact to add.
 /// 2. Remove all facts in `candidates` that are now redundant.
-impl<L: Language> BasicImplicationMinimize<L> {
+impl<'a, L: Language> BasicImplicationMinimize<'a, L> {
     pub fn new(
-        score_fn: Box<ImplicationScoreFn<L>>,
+        score_fn: Box<ImplicationScoreFn<'a, L>>,
         existing: Vec<Implication<L>>,
         step_size: usize,
     ) -> Self {
@@ -207,7 +207,7 @@ impl<L: Language> BasicImplicationMinimize<L> {
     }
 }
 
-impl<L: Language> Minimization<L> for BasicImplicationMinimize<L> {
+impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
     fn minimize(
         &self,
         backend: &mut EgglogBackend<L>,
@@ -331,15 +331,15 @@ mod imp_tests {
     }
 }
 
-pub struct ConditionalRewriteMinimize<L: Language> {
-    score_fn: Box<RewriteScoreFn<L>>,
+pub struct ConditionalRewriteMinimize<'a, L: Language> {
+    score_fn: Box<RewriteScoreFn<'a, L>>,
     existing_rws: Vec<Rewrite<L>>,
     existing_imps: Vec<Implication<L>>,
     step_size: usize,
     _marker: std::marker::PhantomData<L>,
 }
 
-impl<L: Language> Minimization<L> for ConditionalRewriteMinimize<L> {
+impl<'a, L: Language> Minimization<L> for ConditionalRewriteMinimize<'a, L> {
     fn minimize(
         &self,
         backend: &mut EgglogBackend<L>,

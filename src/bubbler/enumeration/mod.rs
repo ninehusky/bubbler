@@ -1,4 +1,6 @@
-pub mod basic_enumerate;
+mod basic_enumerate;
+
+pub use basic_enumerate::BasicEnumerate;
 
 /// Describes roughly what is being enumerated.
 #[derive(Clone, Debug)]
