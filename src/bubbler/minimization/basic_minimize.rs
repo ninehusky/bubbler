@@ -78,7 +78,13 @@ impl<'a, L: Language> Minimization<L> for BasicRewriteMinimize<'a, L> {
             });
         }
 
-        Ok(InferredFacts::Rewrites(chosen))
+        // 4. Only return the new rules.
+        let delta = chosen
+            .into_iter()
+            .filter(|rw| !self.existing.contains(rw))
+            .collect();
+
+        Ok(InferredFacts::Rewrites(delta))
     }
 }
 
@@ -248,7 +254,13 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
             });
         }
 
-        Ok(InferredFacts::Implications(chosen))
+        // 3. Only add the new rules.
+        let delta = chosen
+            .into_iter()
+            .filter(|imp| !self.existing.contains(imp))
+            .collect();
+
+        Ok(InferredFacts::Implications(delta))
     }
 }
 
@@ -395,7 +407,12 @@ impl<'a, L: Language> Minimization<L> for ConditionalRewriteMinimize<'a, L> {
             });
         }
 
-        Ok(InferredFacts::Rewrites(chosen))
+        // 4. Only add the new rules.
+        let delta = chosen
+            .into_iter()
+            .filter(|rw| !self.existing_rws.contains(rw))
+            .collect();
+        Ok(InferredFacts::Rewrites(delta))
     }
 }
 

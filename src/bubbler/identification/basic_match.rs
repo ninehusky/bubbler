@@ -340,7 +340,7 @@ pub mod cond_cvec_match_test {
     use super::*;
     #[test]
     fn conditional_cvec_match_finds_conditional_rewrites() {
-        let mut bubbler =
+        let bubbler =
             Bubbler::<LLVMLang>::new(BubblerConfig::new(vec!["x".into()], vec![-1, 0, 1]));
         let mut backend = EgglogBackend::<LLVMLang>::new();
         backend

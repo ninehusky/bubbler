@@ -270,10 +270,23 @@ mod tests {
     use ruler::enumo::Workload;
 
     use super::*;
-    use crate::bubbler::{Bubbler, BubblerConfig, InferredFacts};
+    use crate::{
+        bubbler::{Bubbler, BubblerConfig, InferredFacts},
+        colors::Implication,
+    };
 
     #[test]
-    fn find_implications() {
+    fn find_implications_poor_schedule() {
+        // TODO(@ninehusky): we need a parser for implications/rules to make this easier.
+        // let expected: Vec<Implication<LLVMLang>> = vec![
+        //     Implication::new("(Gt x y)", "(Neq x y)"),
+        //     Implication::new("(Lt x y)", "(Neq x y)"),
+        //     Implication::new("(Ge x y)", "(Neq x y)"),
+        //     Implication::new("(Le x y)", "(Neq x y)"),
+        //     Implication::new("(Neq x y)", "(Gt x y)"),
+        //     Implication::new("(Neq x y)", "(Lt x y)"),
+        // ];
+
         let bubbler: Bubbler<LLVMLang> = Bubbler::new(BubblerConfig::new(
             vec!["x".into(), "y".into()],
             vec![1, 2, 3],
@@ -289,9 +302,54 @@ mod tests {
             panic!("Expected implications");
         };
 
-        for i in implications {
-            println!("Implication found: {}", i);
+        // We discover redundant implications like:
+        // (Gt ?a ?b ) --> (Neq ?b ?a )
+        // (Gt ?a ?b ) --> (Neq ?a ?b )
+        // Because we didn't first discover rewrites over the condition language.
+        // See `find_implications_better_schedule` test for a better schedule.
+
+        assert_eq!(implications.len(), 8);
+    }
+
+    #[test]
+    fn find_implications_better_schedule() {
+        let mut bubbler: Bubbler<LLVMLang> = Bubbler::new(BubblerConfig::new(
+            vec!["x".into(), "y".into()],
+            vec![1, 2, 3],
+        ));
+
+        let predicate_workload = Workload::new(&["(OP2 VAR VAR)"])
+            .plug("OP2", &Workload::new(&["Gt", "Lt", "Ge", "Le", "Neq"]))
+            .plug("VAR", &Workload::new(&["x", "y"]));
+
+        // Notice that here, we're passing in the predicate workload _as_
+        // the term workload to find rewrites over it. This will come in handy.
+        let (rewrites, conditional) =
+            bubbler.find_rewrites(&predicate_workload, &Workload::empty());
+
+        let InferredFacts::Rewrites(rewrites) = rewrites else {
+            panic!("Expected rewrites");
+        };
+
+        let InferredFacts::Rewrites(conditional) = conditional else {
+            panic!("Expected rewrites");
+        };
+
+        assert!(conditional.is_empty(), "Expected no conditional rewrites");
+
+        for r in rewrites {
+            println!("Rewrite found: {}", r);
+            bubbler.register_rewrite(&r).unwrap();
         }
+
+        let implications = bubbler.find_implications(&predicate_workload);
+
+        let InferredFacts::Implications(implications) = implications else {
+            panic!("Expected implications");
+        };
+
+        // We went from 8 to 3 implications!
+        assert_eq!(implications.len(), 3);
     }
 }
 

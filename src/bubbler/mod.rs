@@ -1,5 +1,7 @@
 use backend::EgglogBackend;
-use identification::{IdentificationConfig, IdentificationMode, PvecMatch};
+use identification::{
+    ConditionalCvecMatch, CvecMatch, IdentificationConfig, IdentificationMode, PvecMatch,
+};
 use minimization::score_fns::implication_score_fns;
 use minimization::BasicImplicationMinimize;
 use ruler::enumo::Workload;
@@ -83,7 +85,11 @@ impl<L: Language> Bubbler<L> {
             .enumerate_bubbler(&mut backend, wkld.clone())
             .unwrap();
 
-        // 2. Identify candidates for implications from the predicates.
+        // 2. Run the existing rules and implications.
+        backend.run_rewrites().unwrap();
+        backend.run_implications().unwrap();
+
+        // 3. Identify candidates for implications from the predicates.
         let imp_candidates = PvecMatch::new(IdentificationConfig {
             mode: IdentificationMode::Implications,
             validate_now: false,
@@ -93,7 +99,7 @@ impl<L: Language> Bubbler<L> {
 
         let score_fn = implication_score_fns::prioritize_vars();
 
-        // 3. Using what we know, minimize the candidates to only keep the best ones.
+        // 4. Using what we know, minimize the candidates to only keep the best ones.
         let minimizer: BasicImplicationMinimize<L> =
             BasicImplicationMinimize::new(Box::new(score_fn), self.implications.clone(), 1);
 
@@ -103,57 +109,97 @@ impl<L: Language> Bubbler<L> {
             panic!("Implication minimizer returned non-implication facts");
         };
 
-        // set difference between self.implications and `found.`
-        let delta = imps
-            .into_iter()
-            .filter(|imp| !self.implications.contains(imp))
-            .collect();
-
-        InferredFacts::Implications(delta)
+        InferredFacts::Implications(imps)
     }
 
     /// Using the Bubbler's current inferred rules and implications,
-    /// discover new rewrites and implications from the given `workload`
-    /// and addthem to the Bubbler's knowledge base.
+    /// discover new rewrites from the given `wkld` and `pred_wkld`
+    /// and add them to the Bubbler's knowledge base.
     /// We will almost certainly change this to have more granularity.
-    /// The values returned are the newly inferred rewrites and implications.
-    pub fn run_workload(
+    /// The values returned are the discovered total and conditional rewrites.
+    pub fn find_rewrites(
         &mut self,
         wkld: &Workload,
         pred_wkld: &Workload,
-    ) -> (RewriteFacts<L>, ImplicationFacts<L>) {
-        todo!()
-        // // 1. Enumerate conditions in the workload.
-        // let mut backend = self.new_backend();
+    ) -> (RewriteFacts<L>, RewriteFacts<L>) {
+        // 1. Enumerate terms and conditions in the workload.
+        let mut backend = self.new_backend();
 
-        // let enumerator = BasicEnumerate::new(
-        //     enumeration::EnumerationConfig {
-        //         mode: enumeration::EnumerationMode::Predicates,
-        //         evaluate: true,
-        //     },
-        //     self.environment.clone(),
-        // );
+        let enumerator = BasicEnumerate::new(
+            enumeration::EnumerationConfig {
+                mode: enumeration::EnumerationMode::Terms,
+                evaluate: true,
+            },
+            self.environment.clone(),
+        );
 
-        // enumerator
-        //     .enumerate_bubbler(&mut backend, pred_wkld.clone())
-        //     .unwrap();
+        enumerator
+            .enumerate_bubbler(&mut backend, wkld.clone())
+            .unwrap();
 
-        // // 2. Identify candidates for implications from the predicates.
-        // let imp_candidates =
+        let enumerator = BasicEnumerate::new(
+            enumeration::EnumerationConfig {
+                mode: enumeration::EnumerationMode::Predicates,
+                evaluate: true,
+            },
+            self.environment.clone(),
+        );
 
-        // // 1. Enumerate terms in the workload.
-        // let enumerator = BasicEnumerate::new(
-        //     enumeration::EnumerationConfig {
-        //         mode: enumeration::EnumerationMode::Terms,
-        //         evaluate: true,
-        //     },
-        //     self.environment.clone(),
-        // );
-        // enumerator
-        //     .enumerate_bubbler(&mut backend, wkld.clone())
-        //     .unwrap();
-        // // 2. Enumerate predicates in the workload.
-        // // 2. Identify candidates.
+        enumerator
+            .enumerate_bubbler(&mut backend, pred_wkld.clone())
+            .unwrap();
+
+        // 2. Run the rules and implications.
+        backend.run_rewrites().unwrap();
+        backend.run_implications().unwrap();
+
+        // 3. Identify total rules from the workload.
+        let identifier = CvecMatch::new(IdentificationConfig {
+            mode: IdentificationMode::Rewrites,
+            validate_now: false,
+        });
+
+        let total_candidates = identifier.identify(&mut backend).unwrap();
+
+        // 4. Minimize the total candidates.
+        let minimizer = minimization::BasicRewriteMinimize::new(
+            Box::new(minimization::score_fns::rewrite_score_fns::prioritize_vars()),
+            self.rules.clone(),
+            1,
+        );
+
+        let total_rewrites = minimizer.minimize(&mut backend, total_candidates).unwrap();
+
+        // 5. Add the new total rewrites to the backend.
+        let InferredFacts::Rewrites(total_rws) = total_rewrites else {
+            panic!("Rewrite minimizer returned non-rewrite facts");
+        };
+
+        // 6. Identify conditional rules from the workload.
+        let identifier = ConditionalCvecMatch::new(IdentificationConfig {
+            mode: IdentificationMode::Rewrites,
+            validate_now: false,
+        });
+
+        let cond_candidates = identifier.identify(&mut backend).unwrap();
+
+        // 7. Minimize the conditional candidates.
+        let minimizer = minimization::BasicRewriteMinimize::new(
+            Box::new(minimization::score_fns::rewrite_score_fns::prioritize_vars()),
+            self.rules.clone(),
+            1,
+        );
+
+        let cond_rewrites = minimizer.minimize(&mut backend, cond_candidates).unwrap();
+
+        let InferredFacts::Rewrites(cond_rws) = cond_rewrites else {
+            panic!("Rewrite minimizer returned non-rewrite facts");
+        };
+
+        (
+            InferredFacts::Rewrites(total_rws),
+            InferredFacts::Rewrites(cond_rws),
+        )
     }
 
     /// Returns a new `EgglogBackend` that has been initialized with the Bubbler's
@@ -169,6 +215,16 @@ impl<L: Language> Bubbler<L> {
         }
 
         backend
+    }
+
+    pub fn register_implication(&mut self, imp: &Implication<L>) -> Result<(), String> {
+        self.implications.push(imp.clone());
+        Ok(())
+    }
+
+    pub fn register_rewrite(&mut self, rw: &Rewrite<L>) -> Result<(), String> {
+        self.rules.push(rw.clone());
+        Ok(())
     }
 
     pub fn run_implications(&self, backend: &mut EgglogBackend<L>) {
