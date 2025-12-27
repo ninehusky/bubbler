@@ -333,13 +333,13 @@ mod imp_tests {
             panic!("Expected implications after minimization.");
         };
 
-        // Why 3 + 1 and not 3?
+        // Why 1 and not 0, if all three are redundant?
         // When we minimize, we add one candidate to the backend first, and then
         // remove redundants. So even though all three candidates are redundant,
         // we will have added one of them before checking for redundancy.
         // In the real world, this won't happen because every candidate
         // is never derivable from existing implications alone.
-        assert_eq!(minimized.len(), existing.len() + 1);
+        assert_eq!(minimized.len(), 1);
     }
 }
 
