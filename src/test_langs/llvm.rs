@@ -4,7 +4,7 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use crate::language::{Language, OpTrait, constant::BubbleConstant};
+use crate::language::{constant::BubbleConstant, Language, OpTrait};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct LLVMLang;
@@ -17,6 +17,8 @@ pub enum LLVMLangOp {
     Div,
     Lt,
     Gt,
+    Ge,
+    Le,
     Min,
     Max,
     Neq,
@@ -31,6 +33,8 @@ impl OpTrait for LLVMLangOp {
             LLVMLangOp::Div => 2,
             LLVMLangOp::Lt => 2,
             LLVMLangOp::Gt => 2,
+            LLVMLangOp::Ge => 2,
+            LLVMLangOp::Le => 2,
             LLVMLangOp::Min => 2,
             LLVMLangOp::Max => 2,
             LLVMLangOp::Neq => 2,
@@ -45,6 +49,8 @@ impl OpTrait for LLVMLangOp {
             LLVMLangOp::Div => "Div",
             LLVMLangOp::Lt => "Lt",
             LLVMLangOp::Gt => "Gt",
+            LLVMLangOp::Ge => "Ge",
+            LLVMLangOp::Le => "Le",
             LLVMLangOp::Min => "Min",
             LLVMLangOp::Max => "Max",
             LLVMLangOp::Neq => "Neq",
@@ -69,6 +75,8 @@ impl FromStr for LLVMLangOp {
             "Div" => Ok(LLVMLangOp::Div),
             "Lt" => Ok(LLVMLangOp::Lt),
             "Gt" => Ok(LLVMLangOp::Gt),
+            "Ge" => Ok(LLVMLangOp::Ge),
+            "Le" => Ok(LLVMLangOp::Le),
             "Min" => Ok(LLVMLangOp::Min),
             "Max" => Ok(LLVMLangOp::Max),
             "Neq" => Ok(LLVMLangOp::Neq),
@@ -108,6 +116,8 @@ impl Language for LLVMLang {
             LLVMLangOp::Div,
             LLVMLangOp::Lt,
             LLVMLangOp::Gt,
+            LLVMLangOp::Ge,
+            LLVMLangOp::Le,
             LLVMLangOp::Min,
             LLVMLangOp::Max,
             LLVMLangOp::Neq,
@@ -192,6 +202,30 @@ impl Language for LLVMLang {
                     })
                     .collect()
             }
+            LLVMLangOp::Ge => {
+                let left_vec = &child_vecs[0];
+                let right_vec = &child_vecs[1];
+                left_vec
+                    .iter()
+                    .zip(right_vec.iter())
+                    .map(|(l, r)| match (l, r) {
+                        (Some(lv), Some(rv)) => Some((lv >= rv) as i64),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            LLVMLangOp::Le => {
+                let left_vec = &child_vecs[0];
+                let right_vec = &child_vecs[1];
+                left_vec
+                    .iter()
+                    .zip(right_vec.iter())
+                    .map(|(l, r)| match (l, r) {
+                        (Some(lv), Some(rv)) => Some((lv <= rv) as i64),
+                        _ => None,
+                    })
+                    .collect()
+            }
             LLVMLangOp::Min => {
                 let left_vec = &child_vecs[0];
                 let right_vec = &child_vecs[1];
@@ -232,73 +266,163 @@ impl Language for LLVMLang {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-enum LLVMMetaOp {
-    IsPositive,
-    IsNegative,
-    IsNotZero,
-}
+mod tests {
+    use ruler::enumo::Workload;
 
-impl OpTrait for LLVMMetaOp {
-    fn arity(&self) -> usize {
-        match self {
-            LLVMMetaOp::IsPositive => 1,
-            LLVMMetaOp::IsNegative => 1,
-            LLVMMetaOp::IsNotZero => 1,
-        }
+    use super::*;
+    use crate::{
+        bubbler::{Bubbler, BubblerConfig, InferredFacts},
+        colors::Implication,
+    };
+
+    #[test]
+    fn find_implications_poor_schedule() {
+        // TODO(@ninehusky): we need a parser for implications/rules to make this easier.
+        // let expected: Vec<Implication<LLVMLang>> = vec![
+        //     Implication::new("(Gt x y)", "(Neq x y)"),
+        //     Implication::new("(Lt x y)", "(Neq x y)"),
+        //     Implication::new("(Ge x y)", "(Neq x y)"),
+        //     Implication::new("(Le x y)", "(Neq x y)"),
+        //     Implication::new("(Neq x y)", "(Gt x y)"),
+        //     Implication::new("(Neq x y)", "(Lt x y)"),
+        // ];
+
+        let bubbler: Bubbler<LLVMLang> = Bubbler::new(BubblerConfig::new(
+            vec!["x".into(), "y".into()],
+            vec![1, 2, 3],
+        ));
+
+        let implications = bubbler.find_implications(
+            &Workload::new(&["(OP2 VAR VAR)"])
+                .plug("OP2", &Workload::new(&["Gt", "Lt", "Ge", "Le", "Neq"]))
+                .plug("VAR", &Workload::new(&["x", "y"])),
+        );
+
+        let InferredFacts::Implications(implications) = implications else {
+            panic!("Expected implications");
+        };
+
+        // We discover redundant implications like:
+        // (Gt ?a ?b ) --> (Neq ?b ?a )
+        // (Gt ?a ?b ) --> (Neq ?a ?b )
+        // Because we didn't first discover rewrites over the condition language.
+        // See `find_implications_better_schedule` test for a better schedule.
+
+        assert_eq!(implications.len(), 8);
     }
 
-    fn name(&self) -> &'static str {
-        match self {
-            LLVMMetaOp::IsPositive => "IsPositive",
-            LLVMMetaOp::IsNegative => "IsNegative",
-            LLVMMetaOp::IsNotZero => "IsNotZero",
+    #[test]
+    fn find_implications_better_schedule() {
+        let mut bubbler: Bubbler<LLVMLang> = Bubbler::new(BubblerConfig::new(
+            vec!["x".into(), "y".into()],
+            vec![1, 2, 3],
+        ));
+
+        let predicate_workload = Workload::new(&["(OP2 VAR VAR)"])
+            .plug("OP2", &Workload::new(&["Gt", "Lt", "Ge", "Le", "Neq"]))
+            .plug("VAR", &Workload::new(&["x", "y"]));
+
+        // Notice that here, we're passing in the predicate workload _as_
+        // the term workload to find rewrites over it. This will come in handy.
+        let (rewrites, conditional) =
+            bubbler.find_rewrites(&predicate_workload, &Workload::empty());
+
+        let InferredFacts::Rewrites(rewrites) = rewrites else {
+            panic!("Expected rewrites");
+        };
+
+        let InferredFacts::Rewrites(conditional) = conditional else {
+            panic!("Expected rewrites");
+        };
+
+        assert!(conditional.is_empty(), "Expected no conditional rewrites");
+
+        for r in rewrites {
+            println!("Rewrite found: {}", r);
+            bubbler.register_rewrite(&r).unwrap();
         }
+
+        let implications = bubbler.find_implications(&predicate_workload);
+
+        let InferredFacts::Implications(implications) = implications else {
+            panic!("Expected implications");
+        };
+
+        // We went from 8 to 3 implications!
+        assert_eq!(implications.len(), 3);
     }
 }
 
-impl FromStr for LLVMMetaOp {
-    type Err = String;
+// We're not going to use this anywhere yet. This is still the dream!
+// We just have some lower hanging fruit to pick first.
+//
+// #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+// enum LLVMMetaOp {
+//     IsPositive,
+//     IsNegative,
+//     IsNotZero,
+// }
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "IsPositive" => Ok(LLVMMetaOp::IsPositive),
-            "IsNegative" => Ok(LLVMMetaOp::IsNegative),
-            "IsNotZero" => Ok(LLVMMetaOp::IsNotZero),
-            _ => Err(format!("Unknown LLVMMetaOp: {}", s)),
-        }
-    }
-}
+// impl OpTrait for LLVMMetaOp {
+//     fn arity(&self) -> usize {
+//         match self {
+//             LLVMMetaOp::IsPositive => 1,
+//             LLVMMetaOp::IsNegative => 1,
+//             LLVMMetaOp::IsNotZero => 1,
+//         }
+//     }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-enum LLVMMetaConst {
-    Int(i64),
-    Bool(bool),
-}
+//     fn name(&self) -> &'static str {
+//         match self {
+//             LLVMMetaOp::IsPositive => "IsPositive",
+//             LLVMMetaOp::IsNegative => "IsNegative",
+//             LLVMMetaOp::IsNotZero => "IsNotZero",
+//         }
+//     }
+// }
 
-impl From<LLVMMetaConst> for BubbleConstant {
-    fn from(c: LLVMMetaConst) -> Self {
-        match c {
-            LLVMMetaConst::Int(i) => BubbleConstant::Int(i),
-            LLVMMetaConst::Bool(b) => BubbleConstant::Bool(b),
-        }
-    }
-}
+// impl FromStr for LLVMMetaOp {
+//     type Err = String;
 
-impl FromStr for LLVMMetaConst {
-    type Err = String;
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         match s {
+//             "IsPositive" => Ok(LLVMMetaOp::IsPositive),
+//             "IsNegative" => Ok(LLVMMetaOp::IsNegative),
+//             "IsNotZero" => Ok(LLVMMetaOp::IsNotZero),
+//             _ => Err(format!("Unknown LLVMMetaOp: {}", s)),
+//         }
+//     }
+// }
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "true" => Ok(LLVMMetaConst::Bool(true)),
-            "false" => Ok(LLVMMetaConst::Bool(false)),
-            _ => {
-                if let Ok(i) = s.parse::<i64>() {
-                    Ok(LLVMMetaConst::Int(i))
-                } else {
-                    Err(format!("Unknown LLVMMetaConst: {}", s))
-                }
-            }
-        }
-    }
-}
+// #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+// enum LLVMMetaConst {
+//     Int(i64),
+//     Bool(bool),
+// }
+
+// impl From<LLVMMetaConst> for BubbleConstant {
+//     fn from(c: LLVMMetaConst) -> Self {
+//         match c {
+//             LLVMMetaConst::Int(i) => BubbleConstant::Int(i),
+//             LLVMMetaConst::Bool(b) => BubbleConstant::Bool(b),
+//         }
+//     }
+// }
+
+// impl FromStr for LLVMMetaConst {
+//     type Err = String;
+
+//     fn from_str(s: &str) -> Result<Self, Self::Err> {
+//         match s {
+//             "true" => Ok(LLVMMetaConst::Bool(true)),
+//             "false" => Ok(LLVMMetaConst::Bool(false)),
+//             _ => {
+//                 if let Ok(i) = s.parse::<i64>() {
+//                     Ok(LLVMMetaConst::Int(i))
+//                 } else {
+//                     Err(format!("Unknown LLVMMetaConst: {}", s))
+//                 }
+//             }
+//         }
+//     }
+// }

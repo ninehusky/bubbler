@@ -1,6 +1,8 @@
 mod basic_match;
 mod bubbler_match;
 
+pub use basic_match::{ConditionalCvecMatch, CvecMatch, PvecMatch};
+
 /// Describes the kind fact that is being identified.
 #[derive(Clone, Debug)]
 pub struct IdentificationConfig {

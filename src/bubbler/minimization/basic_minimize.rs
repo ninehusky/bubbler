@@ -9,9 +9,9 @@ use crate::{
 use super::ImplicationScoreFn;
 use super::RewriteScoreFn;
 
-pub struct BasicRewriteMinimize<L: Language> {
+pub struct BasicRewriteMinimize<'a, L: Language> {
     /// A scoring function for each rewrite. Low means better!
-    score_fn: Box<RewriteScoreFn<L>>,
+    score_fn: Box<RewriteScoreFn<'a, L>>,
     existing: Vec<Rewrite<L>>,
     step_size: usize,
     _marker: std::marker::PhantomData<L>,
@@ -21,9 +21,9 @@ pub struct BasicRewriteMinimize<L: Language> {
 /// Until the `candidates` are empty:
 /// 1. Pick a fact to add.
 /// 2. Remove all facts in `candidates` that are now redundant.
-impl<L: Language> BasicRewriteMinimize<L> {
+impl<'a, L: Language> BasicRewriteMinimize<'a, L> {
     pub fn new(
-        score_fn: Box<RewriteScoreFn<L>>,
+        score_fn: Box<RewriteScoreFn<'a, L>>,
         existing: Vec<Rewrite<L>>,
         step_size: usize,
     ) -> Self {
@@ -36,7 +36,7 @@ impl<L: Language> BasicRewriteMinimize<L> {
     }
 }
 
-impl<L: Language> Minimization<L> for BasicRewriteMinimize<L> {
+impl<'a, L: Language> Minimization<L> for BasicRewriteMinimize<'a, L> {
     fn minimize(
         &self,
         backend: &mut EgglogBackend<L>,
@@ -78,7 +78,13 @@ impl<L: Language> Minimization<L> for BasicRewriteMinimize<L> {
             });
         }
 
-        Ok(InferredFacts::Rewrites(chosen))
+        // 4. Only return the new rules.
+        let delta = chosen
+            .into_iter()
+            .filter(|rw| !self.existing.contains(rw))
+            .collect();
+
+        Ok(InferredFacts::Rewrites(delta))
     }
 }
 
@@ -180,9 +186,9 @@ mod rw_tests {
     }
 }
 
-pub struct BasicImplicationMinimize<L: Language> {
+pub struct BasicImplicationMinimize<'a, L: Language> {
     /// A scoring function for each rewrite. Low means better!
-    score_fn: Box<ImplicationScoreFn<L>>,
+    score_fn: Box<ImplicationScoreFn<'a, L>>,
     existing: Vec<Implication<L>>,
     step_size: usize,
     _marker: std::marker::PhantomData<L>,
@@ -192,9 +198,9 @@ pub struct BasicImplicationMinimize<L: Language> {
 /// Until the `candidates` are empty:
 /// 1. Pick a fact to add.
 /// 2. Remove all facts in `candidates` that are now redundant.
-impl<L: Language> BasicImplicationMinimize<L> {
+impl<'a, L: Language> BasicImplicationMinimize<'a, L> {
     pub fn new(
-        score_fn: Box<ImplicationScoreFn<L>>,
+        score_fn: Box<ImplicationScoreFn<'a, L>>,
         existing: Vec<Implication<L>>,
         step_size: usize,
     ) -> Self {
@@ -207,7 +213,7 @@ impl<L: Language> BasicImplicationMinimize<L> {
     }
 }
 
-impl<L: Language> Minimization<L> for BasicImplicationMinimize<L> {
+impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
     fn minimize(
         &self,
         backend: &mut EgglogBackend<L>,
@@ -248,7 +254,13 @@ impl<L: Language> Minimization<L> for BasicImplicationMinimize<L> {
             });
         }
 
-        Ok(InferredFacts::Implications(chosen))
+        // 3. Only add the new rules.
+        let delta = chosen
+            .into_iter()
+            .filter(|imp| !self.existing.contains(imp))
+            .collect();
+
+        Ok(InferredFacts::Implications(delta))
     }
 }
 
@@ -321,25 +333,25 @@ mod imp_tests {
             panic!("Expected implications after minimization.");
         };
 
-        // Why 3 + 1 and not 3?
+        // Why 1 and not 0, if all three are redundant?
         // When we minimize, we add one candidate to the backend first, and then
         // remove redundants. So even though all three candidates are redundant,
         // we will have added one of them before checking for redundancy.
         // In the real world, this won't happen because every candidate
         // is never derivable from existing implications alone.
-        assert_eq!(minimized.len(), existing.len() + 1);
+        assert_eq!(minimized.len(), 1);
     }
 }
 
-pub struct ConditionalRewriteMinimize<L: Language> {
-    score_fn: Box<RewriteScoreFn<L>>,
+pub struct ConditionalRewriteMinimize<'a, L: Language> {
+    score_fn: Box<RewriteScoreFn<'a, L>>,
     existing_rws: Vec<Rewrite<L>>,
     existing_imps: Vec<Implication<L>>,
     step_size: usize,
     _marker: std::marker::PhantomData<L>,
 }
 
-impl<L: Language> Minimization<L> for ConditionalRewriteMinimize<L> {
+impl<'a, L: Language> Minimization<L> for ConditionalRewriteMinimize<'a, L> {
     fn minimize(
         &self,
         backend: &mut EgglogBackend<L>,
@@ -395,7 +407,12 @@ impl<L: Language> Minimization<L> for ConditionalRewriteMinimize<L> {
             });
         }
 
-        Ok(InferredFacts::Rewrites(chosen))
+        // 4. Only add the new rules.
+        let delta = chosen
+            .into_iter()
+            .filter(|rw| !self.existing_rws.contains(rw))
+            .collect();
+        Ok(InferredFacts::Rewrites(delta))
     }
 }
 
