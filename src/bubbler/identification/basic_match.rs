@@ -141,9 +141,6 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
             }
         }
 
-        for c in candidates.iter() {
-            println!("Inferred implication: {}", c);
-        }
         Ok(InferredFacts::Implications(candidates))
     }
 }
