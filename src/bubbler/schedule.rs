@@ -7,13 +7,16 @@
 //! Both types of inference follow a three step process of (1) enumeration,
 //! (2) candidate identification, and (3) minimization.
 
+#![allow(dead_code)]
+// Scheduling is under active development; types are unused temporarily
+// while we build out the overall architecture.
 
 use crate::language::Language;
 
 use ruler::enumo::Workload;
 
-use super::backend::EgglogBackend;
 use super::InferredFacts;
+use super::backend::EgglogBackend;
 
 pub struct BubblerSchedule<L: Language> {
     pub actions: Vec<BubblerAction<L>>,

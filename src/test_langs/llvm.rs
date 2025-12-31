@@ -4,7 +4,7 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use crate::language::{constant::BubbleConstant, Language, OpTrait};
+use crate::language::{Language, OpTrait, constant::BubbleConstant};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct LLVMLang;
@@ -284,10 +284,6 @@ impl Language for LLVMLang {
 }
 
 mod tests {
-    
-
-    
-    
 
     #[test]
     fn find_implications_poor_schedule() {

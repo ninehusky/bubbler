@@ -4,7 +4,7 @@
 use egglog::ast::Expr;
 use std::collections::HashMap;
 
-use crate::language::{term::PredicateTerm, Language, Term};
+use crate::language::{Language, Term, term::PredicateTerm};
 use std::hash::Hash;
 
 /// The left-hand side of an [`Implication`] can be either a predicate

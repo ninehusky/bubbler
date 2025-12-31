@@ -1,9 +1,8 @@
-
 use crate::{
     bubbler::{backend::EgglogBackend, schedule::Enumeration},
     language::{
-        term::{PredicateTerm, Term},
         Environment, Language,
+        term::{PredicateTerm, Term},
     },
 };
 
@@ -49,7 +48,6 @@ impl<L: Language> Enumeration<L> for BasicEnumerate<L> {
                     let predicate = PredicateTerm::from_term(term);
                     backend.add_predicate(predicate, pvec)?;
                 }
-                _ => todo!(),
             }
         }
         Ok(())

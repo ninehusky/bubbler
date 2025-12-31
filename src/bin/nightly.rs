@@ -9,6 +9,7 @@ use bubbler::record;
 use bubbler::test_langs::llvm::{LLVMLang, LLVMLangOp};
 use ruler::enumo::Workload;
 
+#[allow(clippy::vec_init_then_push)]
 fn halide_handwritten_ruleset() -> InferredFacts<LLVMLang> {
     let mut results: Vec<Rewrite<LLVMLang>> = vec![];
 
@@ -140,17 +141,6 @@ fn inferred_ruleset(stats: &mut EvalStats) -> (Vec<Rewrite<LLVMLang>>, Vec<Impli
             .register_implication(imp)
             .expect("Failed to register inferred implication");
     }
-
-    let term_workload = Workload::new(&["(OP2 EXPR EXPR)"])
-        .plug("OP2", &Workload::new(&["Gt", "Lt"]))
-        .plug(
-            "EXPR",
-            &Workload::new(&["(Mul EXPR EXPR)"]).plug(
-                "EXPR",
-                &Workload::new(&["VAR", "(Add VAR VAR)"])
-                    .plug("VAR", &Workload::new(&["x", "y", "z"])),
-            ),
-        );
 
     // Placeholder for inferred ruleset
     (rewrites, implications)

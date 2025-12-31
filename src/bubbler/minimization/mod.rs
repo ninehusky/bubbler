@@ -7,6 +7,7 @@ mod basic_minimize;
 
 pub use basic_minimize::{BasicImplicationMinimize, BasicRewriteMinimize};
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct MinimizationConfig {}
 
@@ -73,6 +74,7 @@ pub mod score_fns {
             })
         }
 
+        #[allow(dead_code)]
         pub fn ast_size<'a, L: Language>() -> Box<RewriteScoreFn<'a, L>> {
             Box::new(|rw: &Rewrite<L>| {
                 let cond_size = match rw {
