@@ -155,10 +155,7 @@ impl Language for HalideLang {
                 let child_vec = &child_vecs[0];
                 child_vec
                     .iter()
-                    .map(|v| match v {
-                        Some(cv) => Some(if *cv == 0 { 1 } else { 0 }),
-                        None => None,
-                    })
+                    .map(|v| v.as_ref().map(|cv| if *cv == 0 { 1 } else { 0 }))
                     .collect()
             }
             HalideOp::And => {
