@@ -1,0 +1,30 @@
+name: bubbler nightly
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: "0 9 * * *" # daily at 09:00 UTC
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run bubbler nightly
+        run: cargo run --bin bubbler-nightly
+
+      - name: Upload nightly artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bubbler-nightly
+          path: artifacts/nightly.json
