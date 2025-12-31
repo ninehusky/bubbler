@@ -21,7 +21,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Run bubbler nightly
-        run: cargo run --bin bubbler-nightly
+        run: cargo run --bin nightly
 
       - name: Upload nightly artifact
         uses: actions/upload-artifact@v4
