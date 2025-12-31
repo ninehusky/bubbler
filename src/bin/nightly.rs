@@ -2,14 +2,14 @@ use std::vec;
 
 use bubbler::bubbler::{Bubbler, BubblerConfig, InferredFacts};
 use bubbler::colors::Implication;
-use bubbler::eval::{derivability::can_derive, stats::EvalStats};
-use bubbler::language::{Language, PredicateTerm, Rewrite, Term};
+use bubbler::eval::{report::NightlyReport, stats::EvalStats};
+use bubbler::language::{PredicateTerm, Rewrite, Term};
 use bubbler::record;
 
 use bubbler::test_langs::llvm::{LLVMLang, LLVMLangOp};
 use ruler::enumo::Workload;
 
-fn handwritten_ruleset() -> InferredFacts<LLVMLang> {
+fn halide_handwritten_ruleset() -> InferredFacts<LLVMLang> {
     let mut results: Vec<Rewrite<LLVMLang>> = vec![];
 
     // min(z, y) < min(x, y + c0) ==>  min(z, y) < x if  c0 > 0
@@ -163,35 +163,21 @@ fn main() {
 
     let (inferred_rewrites, inferred_implications) = inferred_ruleset(&mut stats);
 
-    let InferredFacts::Rewrites(handwritten_rewrites) = handwritten_ruleset() else {
+    let InferredFacts::Rewrites(handwritten_rewrites) = halide_handwritten_ruleset() else {
         panic!("Expected handwritten rewrites");
     };
 
-    for rw in &inferred_rewrites {
-        println!("Inferred rewrite: {}", rw);
-    }
-
-    for imp in &inferred_implications {
-        println!("Inferred implication: {}", imp);
-    }
-
-    let total_rules = handwritten_rewrites.len();
-    let mut subsumed_rules = 0;
-    for rule in &handwritten_rewrites {
-        if can_derive(&inferred_rewrites, &inferred_implications, &rule) {
-            subsumed_rules += 1;
-        }
-    }
-
-    println!("Rules checked: {total_rules}");
-    println!(
-        "Subsumed: {} ({:.1}%)",
-        subsumed_rules,
-        100.0 * subsumed_rules as f64 / total_rules as f64
+    let report = NightlyReport::from_run(
+        &inferred_rewrites,
+        &inferred_implications,
+        &handwritten_rewrites,
+        &stats,
     );
 
-    println!("\nTiming:");
-    for (k, v) in stats.times {
-        println!("  {k}: {} ms", v.as_millis());
-    }
+    std::fs::create_dir_all("artifacts").unwrap();
+    std::fs::write(
+        "artifacts/nightly.json",
+        serde_json::to_string_pretty(&report).unwrap(),
+    )
+    .unwrap();
 }

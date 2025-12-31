@@ -7,10 +7,8 @@
 //! Both types of inference follow a three step process of (1) enumeration,
 //! (2) candidate identification, and (3) minimization.
 
-use egglog::EGraph;
 
-use crate::bubbler::Bubbler;
-use crate::language::{rewrite::Rewrite, Language};
+use crate::language::Language;
 
 use ruler::enumo::Workload;
 

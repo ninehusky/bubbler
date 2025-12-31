@@ -1,5 +1,5 @@
 use crate::{
-    bubbler::{Bubbler, BubblerConfig, InferredFacts},
+    bubbler::{Bubbler, BubblerConfig},
     colors::Implication,
     language::{Language, Rewrite},
 };
@@ -16,7 +16,7 @@ pub fn can_derive<L: Language>(
 
     for rw in rewrites {
         bubbler
-            .register_rewrite(&rw)
+            .register_rewrite(rw)
             .expect("Failed to add rewrite to bubbler.");
     }
 

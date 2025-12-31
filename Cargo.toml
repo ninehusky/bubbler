@@ -7,6 +7,9 @@ edition = "2024"
 egglog = { path = "egglog" }
 ruler = { path = "ruler" }
 symbolic_expressions = "5.0.3"
+serde = "1.0.228"
+serde_json = "1.0.148"
+
 
 [lib]
 name = "bubbler"

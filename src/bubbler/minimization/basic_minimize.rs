@@ -1,7 +1,6 @@
-use egglog::SerializeConfig;
 
 use crate::{
-    bubbler::{backend::EgglogBackend, schedule::Minimization, Bubbler, InferredFacts},
+    bubbler::{backend::EgglogBackend, schedule::Minimization, InferredFacts},
     colors::implication::Implication,
     language::{rewrite::Rewrite, Language, PredicateTerm},
 };
@@ -47,8 +46,8 @@ impl<'a, L: Language> Minimization<L> for BasicRewriteMinimize<'a, L> {
             return Err("BasicRewriteMinimize only supports rewrite minimization.".into());
         };
         candidates.sort_by(|a, b| {
-            let score_a = (&self.score_fn)(&a);
-            let score_b = (&self.score_fn)(&b);
+            let score_a = (self.score_fn)(a);
+            let score_b = (self.score_fn)(b);
             score_b.cmp(&score_a)
         });
 
@@ -224,8 +223,8 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
             return Err("BasicImplicationMinimize only supports implication minimization.".into());
         };
         candidates.sort_by(|a, b| {
-            let score_a = (&self.score_fn)(&a);
-            let score_b = (&self.score_fn)(&b);
+            let score_a = (self.score_fn)(a);
+            let score_b = (self.score_fn)(b);
             score_b.cmp(&score_a)
         });
 
@@ -363,8 +362,8 @@ impl<'a, L: Language> Minimization<L> for ConditionalRewriteMinimize<'a, L> {
         };
 
         candidates.sort_by(|a, b| {
-            let score_a = (&self.score_fn)(&a);
-            let score_b = (&self.score_fn)(&b);
+            let score_a = (self.score_fn)(a);
+            let score_b = (self.score_fn)(b);
             score_b.cmp(&score_a)
         });
 

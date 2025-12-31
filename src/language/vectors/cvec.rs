@@ -59,7 +59,7 @@ impl<L: Language> CVec<L> {
         self.0
             .iter()
             .map(|opt| {
-                opt.as_ref().map_or(false, |c| {
+                opt.as_ref().is_some_and(|c| {
                     let bc: BubbleConstant = L::constant_to_bubble(c);
                     bc.to_bool()
                 })

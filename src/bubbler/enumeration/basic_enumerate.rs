@@ -1,9 +1,7 @@
-use ruler::enumo::Workload;
 
 use crate::{
     bubbler::{backend::EgglogBackend, schedule::Enumeration},
     language::{
-        constant::BubbleConstant,
         term::{PredicateTerm, Term},
         Environment, Language,
     },
@@ -47,11 +45,7 @@ impl<L: Language> Enumeration<L> for BasicEnumerate<L> {
                     backend.add_term(term, cvec)?;
                 }
                 EnumerationMode::Predicates => {
-                    let pvec = if let Some(cvec) = cvec {
-                        Some(cvec.to_pvec())
-                    } else {
-                        None
-                    };
+                    let pvec = cvec.map(|cvec| cvec.to_pvec());
                     let predicate = PredicateTerm::from_term(term);
                     backend.add_predicate(predicate, pvec)?;
                 }

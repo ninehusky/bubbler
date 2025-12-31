@@ -1,7 +1,7 @@
 //! This file contains the matching strategies used in Chompy's implementation.
 
 use crate::{
-    bubbler::{backend::EgglogBackend, schedule::Identification, Bubbler, InferredFacts},
+    bubbler::{backend::EgglogBackend, schedule::Identification, InferredFacts},
     colors::implication::Implication,
     language::{rewrite::Rewrite, CVec, Language, PVec},
 };
@@ -281,7 +281,7 @@ impl<L: Language> Identification<L> for ConditionalCvecMatch<L> {
 
         let mut vector_matches: Vec<(PVec, CVec<L>, CVec<L>)> = vec![];
         for (i, cvec1) in cvec_map.keys().cloned().enumerate() {
-            for cvec2 in cvec_map.keys().cloned().skip(i + 1) {
+            for cvec2 in cvec_map.keys().skip(i + 1).cloned() {
                 // find the pvecs which make cvec1 = cvec2.
                 for pvec in pvec_map.keys() {
                     if Self::pvec_implies_cvecs_equal(pvec, &cvec1, &cvec2) {
