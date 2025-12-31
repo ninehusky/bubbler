@@ -4,13 +4,14 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use crate::language::{constant::BubbleConstant, Language, OpTrait};
+use crate::language::{Language, OpTrait, constant::BubbleConstant};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct LLVMLang;
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum LLVMLangOp {
+    And,
     Add,
     Sub,
     Mul,
@@ -27,6 +28,7 @@ pub enum LLVMLangOp {
 impl OpTrait for LLVMLangOp {
     fn arity(&self) -> usize {
         match self {
+            LLVMLangOp::And => 2,
             LLVMLangOp::Add => 2,
             LLVMLangOp::Sub => 2,
             LLVMLangOp::Mul => 2,
@@ -43,6 +45,7 @@ impl OpTrait for LLVMLangOp {
 
     fn name(&self) -> &'static str {
         match self {
+            LLVMLangOp::And => "And",
             LLVMLangOp::Add => "Add",
             LLVMLangOp::Sub => "Sub",
             LLVMLangOp::Mul => "Mul",
@@ -69,6 +72,7 @@ impl FromStr for LLVMLangOp {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "And" => Ok(LLVMLangOp::And),
             "Add" => Ok(LLVMLangOp::Add),
             "Sub" => Ok(LLVMLangOp::Sub),
             "Mul" => Ok(LLVMLangOp::Mul),
@@ -110,6 +114,7 @@ impl Language for LLVMLang {
 
     fn ops() -> Vec<Self::Op> {
         vec![
+            LLVMLangOp::And,
             LLVMLangOp::Add,
             LLVMLangOp::Sub,
             LLVMLangOp::Mul,
@@ -129,6 +134,18 @@ impl Language for LLVMLang {
         child_vecs: &[crate::language::CVec<Self>],
     ) -> crate::language::CVec<Self> {
         match op {
+            LLVMLangOp::And => {
+                let left_vec = &child_vecs[0];
+                let right_vec = &child_vecs[1];
+                left_vec
+                    .iter()
+                    .zip(right_vec.iter())
+                    .map(|(l, r)| match (l, r) {
+                        (Some(lv), Some(rv)) => Some(((*lv != 0) && (*rv != 0)) as i64),
+                        _ => None,
+                    })
+                    .collect()
+            }
             LLVMLangOp::Add => {
                 let left_vec = &child_vecs[0];
                 let right_vec = &child_vecs[1];
@@ -266,14 +283,12 @@ impl Language for LLVMLang {
     }
 }
 
+#[cfg(test)]
+#[allow(unused_imports)]
 mod tests {
-    use ruler::enumo::Workload;
-
     use super::*;
-    use crate::{
-        bubbler::{Bubbler, BubblerConfig, InferredFacts},
-        colors::Implication,
-    };
+    use crate::bubbler::{Bubbler, BubblerConfig, InferredFacts};
+    use ruler::enumo::Workload;
 
     #[test]
     fn find_implications_poor_schedule() {
@@ -338,7 +353,6 @@ mod tests {
         assert!(conditional.is_empty(), "Expected no conditional rewrites");
 
         for r in rewrites {
-            println!("Rewrite found: {}", r);
             bubbler.register_rewrite(&r).unwrap();
         }
 

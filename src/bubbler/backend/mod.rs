@@ -3,23 +3,24 @@
 use std::collections::HashMap;
 
 use egglog::{
+    CommandOutput, EGraph,
     ast::{
         Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
         GenericRunConfig, GenericSchedule, Variant,
     },
     call, lit,
-    prelude::{add_relation, add_ruleset, RustSpan, Span},
-    span, var, CommandOutput, EGraph,
+    prelude::{RustSpan, Span, add_relation, add_ruleset},
+    span, var,
 };
 use intern::InternStore;
 
 use crate::{
     colors::implication::Implication,
     language::{
+        CVec, Language, OpTrait, PVec,
         constant::BubbleConstant,
         rewrite::Rewrite,
         term::{PredicateTerm, Term},
-        CVec, Language, OpTrait, PVec,
     },
 };
 
@@ -82,6 +83,7 @@ impl<L: Language> EgglogBackend<L> {
         }
     }
 
+    #[allow(clippy::vec_init_then_push)]
     pub fn setup_egraph() -> EGraph {
         let mut egraph = EGraph::default();
         // 1. Register the base language's syntax as a datatype.
@@ -831,7 +833,7 @@ impl<L: Language> From<PredicateTerm<L>> for Expr {
 
 #[cfg(test)]
 mod tests {
-    use egglog::{CommandOutput, SerializeConfig};
+    use egglog::CommandOutput;
 
     use super::*;
     use crate::test_langs::llvm::{LLVMLang, LLVMLangOp};
@@ -1206,15 +1208,17 @@ mod tests {
             )
             .unwrap();
 
-        assert!(!backend
-            .is_conditionally_equal(
-                &PredicateTerm::from_term(Term::Call(
-                    LLVMLangOp::Gt,
-                    vec![Term::Var("a".into()), Term::Const(0.into())],
-                )),
-                &Term::Var("a".into()),
-                &Term::Var("c".into()),
-            )
-            .unwrap());
+        assert!(
+            !backend
+                .is_conditionally_equal(
+                    &PredicateTerm::from_term(Term::Call(
+                        LLVMLangOp::Gt,
+                        vec![Term::Var("a".into()), Term::Const(0.into())],
+                    )),
+                    &Term::Var("a".into()),
+                    &Term::Var("c".into()),
+                )
+                .unwrap()
+        );
     }
 }

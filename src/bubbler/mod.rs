@@ -2,16 +2,16 @@ use backend::EgglogBackend;
 use identification::{
     ConditionalCvecMatch, CvecMatch, IdentificationConfig, IdentificationMode, PvecMatch,
 };
-use minimization::score_fns::implication_score_fns;
 use minimization::BasicImplicationMinimize;
+use minimization::score_fns::implication_score_fns;
 use ruler::enumo::Workload;
-use schedule::{BubblerAction, Enumeration, Identification, Minimization};
+use schedule::{Enumeration, Identification, Minimization};
 
 use crate::colors::implication::Implication;
 use crate::language::constant::BubbleConstant;
 use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
-use crate::language::{term::Term, CVec, Environment, Language};
+use crate::language::{CVec, Environment, Language, term::Term};
 
 mod backend;
 mod enumeration;
@@ -207,11 +207,11 @@ impl<L: Language> Bubbler<L> {
     pub fn new_backend(&self) -> EgglogBackend<L> {
         let mut backend = EgglogBackend::<L>::new();
         for rule in &self.rules {
-            backend.register(&rule).unwrap();
+            backend.register(rule).unwrap();
         }
 
         for imp in &self.implications {
-            backend.register_implication(&imp).unwrap();
+            backend.register_implication(imp).unwrap();
         }
 
         backend

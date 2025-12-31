@@ -12,6 +12,6 @@ impl PVec {
     ///
     /// This is the core check used during implication discovery.
     pub fn implies(&self, other: &PVec) -> bool {
-        self.iter().zip(other.iter()).all(|(p, q)| !(*p && !*q))
+        self.iter().zip(other.iter()).all(|(p, q)| !(*p) && !*q)
     }
 }

@@ -1,14 +1,13 @@
-use egglog::SerializeConfig;
-
 use crate::{
-    bubbler::{backend::EgglogBackend, schedule::Minimization, Bubbler, InferredFacts},
+    bubbler::{InferredFacts, backend::EgglogBackend, schedule::Minimization},
     colors::implication::Implication,
-    language::{rewrite::Rewrite, Language, PredicateTerm},
+    language::{Language, PredicateTerm, rewrite::Rewrite},
 };
 
 use super::ImplicationScoreFn;
 use super::RewriteScoreFn;
 
+#[allow(dead_code)]
 pub struct BasicRewriteMinimize<'a, L: Language> {
     /// A scoring function for each rewrite. Low means better!
     score_fn: Box<RewriteScoreFn<'a, L>>,
@@ -47,8 +46,8 @@ impl<'a, L: Language> Minimization<L> for BasicRewriteMinimize<'a, L> {
             return Err("BasicRewriteMinimize only supports rewrite minimization.".into());
         };
         candidates.sort_by(|a, b| {
-            let score_a = (&self.score_fn)(&a);
-            let score_b = (&self.score_fn)(&b);
+            let score_a = (self.score_fn)(a);
+            let score_b = (self.score_fn)(b);
             score_b.cmp(&score_a)
         });
 
@@ -186,6 +185,7 @@ mod rw_tests {
     }
 }
 
+#[allow(dead_code)]
 pub struct BasicImplicationMinimize<'a, L: Language> {
     /// A scoring function for each rewrite. Low means better!
     score_fn: Box<ImplicationScoreFn<'a, L>>,
@@ -224,8 +224,8 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
             return Err("BasicImplicationMinimize only supports implication minimization.".into());
         };
         candidates.sort_by(|a, b| {
-            let score_a = (&self.score_fn)(&a);
-            let score_b = (&self.score_fn)(&b);
+            let score_a = (self.score_fn)(a);
+            let score_b = (self.score_fn)(b);
             score_b.cmp(&score_a)
         });
 
@@ -343,6 +343,7 @@ mod imp_tests {
     }
 }
 
+#[allow(dead_code)]
 pub struct ConditionalRewriteMinimize<'a, L: Language> {
     score_fn: Box<RewriteScoreFn<'a, L>>,
     existing_rws: Vec<Rewrite<L>>,
@@ -363,8 +364,8 @@ impl<'a, L: Language> Minimization<L> for ConditionalRewriteMinimize<'a, L> {
         };
 
         candidates.sort_by(|a, b| {
-            let score_a = (&self.score_fn)(&a);
-            let score_b = (&self.score_fn)(&b);
+            let score_a = (self.score_fn)(a);
+            let score_b = (self.score_fn)(b);
             score_b.cmp(&score_a)
         });
 
@@ -420,7 +421,6 @@ impl<'a, L: Language> Minimization<L> for ConditionalRewriteMinimize<'a, L> {
 pub mod cond_rw_tests {
     use crate::{
         bubbler::minimization::score_fns,
-        colors::Condition,
         language::Term,
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
@@ -474,18 +474,20 @@ pub mod cond_rw_tests {
         ];
 
         // note that Lt -> Neq is missing here. That's on purpose!
-        let implications: Vec<Implication<LLVMLang>> = vec![Implication::new(
-            PredicateTerm::from_term(Term::Call(
-                LLVMLangOp::Gt,
-                vec![Term::Var("a".into()), Term::Const(0)],
-            ))
-            .into(),
-            PredicateTerm::from_term(Term::Call(
-                LLVMLangOp::Neq,
-                vec![Term::Var("a".into()), Term::Const(0)],
-            )),
-        )
-        .unwrap()];
+        let implications: Vec<Implication<LLVMLang>> = vec![
+            Implication::new(
+                PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0)],
+                ))
+                .into(),
+                PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Neq,
+                    vec![Term::Var("a".into()), Term::Const(0)],
+                )),
+            )
+            .unwrap(),
+        ];
 
         for imp in &implications {
             backend.register_implication(imp).unwrap();
@@ -508,19 +510,21 @@ pub mod cond_rw_tests {
         };
 
         assert_eq!(minimized.len(), 2);
-        assert!(!minimized.contains(
-            &Rewrite::new(
-                Some(PredicateTerm::from_term(Term::Call(
-                    LLVMLangOp::Gt,
-                    vec![Term::Var("a".into()), Term::Const(0)],
-                ))),
-                Term::Call(
-                    LLVMLangOp::Div,
-                    vec![Term::Var("a".into()), Term::Var("a".into())],
-                ),
-                Term::Const(1),
+        assert!(
+            !minimized.contains(
+                &Rewrite::new(
+                    Some(PredicateTerm::from_term(Term::Call(
+                        LLVMLangOp::Gt,
+                        vec![Term::Var("a".into()), Term::Const(0)],
+                    ))),
+                    Term::Call(
+                        LLVMLangOp::Div,
+                        vec![Term::Var("a".into()), Term::Var("a".into())],
+                    ),
+                    Term::Const(1),
+                )
+                .unwrap()
             )
-            .unwrap()
-        ));
+        );
     }
 }

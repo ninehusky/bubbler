@@ -212,7 +212,6 @@ pub fn self_product<T: Clone>(ts: &[T], n: usize) -> Vec<Vec<T>> {
 #[cfg(test)]
 mod lang_tests {
     use super::*;
-    use BubbleLangOp::*;
 
     #[test]
     fn test_arity() {

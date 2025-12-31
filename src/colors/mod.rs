@@ -13,7 +13,7 @@ pub use implication::{Condition, Implication};
 
 use std::collections::HashMap;
 
-use crate::language::{term::PredicateTerm, Language};
+use crate::language::{Language, term::PredicateTerm};
 use graph::{Graph, NodeId};
 
 /// A colored DAG structure for managing conditional equivalences.
