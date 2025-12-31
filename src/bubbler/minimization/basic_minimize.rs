@@ -421,7 +421,6 @@ impl<'a, L: Language> Minimization<L> for ConditionalRewriteMinimize<'a, L> {
 pub mod cond_rw_tests {
     use crate::{
         bubbler::minimization::score_fns,
-        colors::Condition,
         language::Term,
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };

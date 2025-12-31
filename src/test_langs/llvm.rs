@@ -283,7 +283,12 @@ impl Language for LLVMLang {
     }
 }
 
+#[cfg(test)]
+#[allow(unused_imports)]
 mod tests {
+    use super::*;
+    use crate::bubbler::{Bubbler, BubblerConfig, InferredFacts};
+    use ruler::enumo::Workload;
 
     #[test]
     fn find_implications_poor_schedule() {
@@ -348,7 +353,6 @@ mod tests {
         assert!(conditional.is_empty(), "Expected no conditional rewrites");
 
         for r in rewrites {
-            println!("Rewrite found: {}", r);
             bubbler.register_rewrite(&r).unwrap();
         }
 

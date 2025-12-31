@@ -147,7 +147,7 @@ fn inferred_ruleset(stats: &mut EvalStats) -> (Vec<Rewrite<LLVMLang>>, Vec<Impli
 }
 
 fn main() {
-    println!("=== Bubbler nightly ===");
+    println!("=== Running tha Bubbler nightly ===");
 
     let mut stats = EvalStats::default();
 
@@ -164,10 +164,28 @@ fn main() {
         &stats,
     );
 
+    println!(
+        "checked: {} | subsumed: {} ({:.1}%)",
+        report.summary.rules_checked,
+        report.summary.rules_subsumed,
+        100.0 * report.summary.rules_subsumed as f64 / report.summary.rules_checked.max(1) as f64
+    );
+
     std::fs::create_dir_all("artifacts").unwrap();
     std::fs::write(
         "artifacts/nightly.json",
         serde_json::to_string_pretty(&report).unwrap(),
     )
     .unwrap();
+
+    let total_ms: u128 = report.stats.timings_ms.iter().map(|(_, t)| *t).sum();
+
+    println!("time: {} ms total", total_ms);
+
+    for (name, ms) in &report.stats.timings_ms {
+        println!("  - {name}: {ms} ms");
+    }
+
+    println!("Wrote report to artifacts/nightly.json");
+    println!("=== Done ===");
 }

@@ -32,3 +32,5 @@ Cargo.lock
 # Egraph remnants that I may forget to delete
 **/*.json
 **/*.dot
+
+artifacts/*

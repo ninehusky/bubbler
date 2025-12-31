@@ -1,7 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
 use bubbler::language::{BubbleConstant, Language, OpTrait};
-use egglog::ast::Rewrite;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HalideLang;

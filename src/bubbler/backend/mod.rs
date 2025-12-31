@@ -833,7 +833,7 @@ impl<L: Language> From<PredicateTerm<L>> for Expr {
 
 #[cfg(test)]
 mod tests {
-    use egglog::{CommandOutput, SerializeConfig};
+    use egglog::CommandOutput;
 
     use super::*;
     use crate::test_langs::llvm::{LLVMLang, LLVMLangOp};

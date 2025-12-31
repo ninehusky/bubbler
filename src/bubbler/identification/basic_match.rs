@@ -150,10 +150,10 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
 mod tests {
     use crate::{
         bubbler::{
-            BubblerConfig,
+            Bubbler, BubblerConfig,
             enumeration::{BasicEnumerate, EnumerationConfig, EnumerationMode},
             identification::{IdentificationConfig, IdentificationMode},
-            schedule::{BubblerAction, Enumeration, Identification},
+            schedule::{Enumeration, Identification},
         },
         test_langs::llvm::LLVMLang,
     };
@@ -206,7 +206,7 @@ mod tests {
     fn pvec_match_finds_implications() {
         let cfg: BubblerConfig<LLVMLang> =
             BubblerConfig::new(vec!["x".into(), "y".into()], vec![1, 2]);
-        let mut bubbler = Bubbler::new(cfg);
+        let bubbler = Bubbler::new(cfg);
 
         let enumeration_cfg: EnumerationConfig = EnumerationConfig {
             mode: EnumerationMode::Predicates,
@@ -327,10 +327,8 @@ impl<L: Language> Identification<L> for ConditionalCvecMatch<L> {
 
 #[cfg(test)]
 pub mod cond_cvec_match_test {
-    use egglog::SerializeConfig;
-
     use crate::{
-        bubbler::{BubblerConfig, identification::IdentificationMode},
+        bubbler::{Bubbler, BubblerConfig, identification::IdentificationMode},
         language::{PredicateTerm, Term},
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
