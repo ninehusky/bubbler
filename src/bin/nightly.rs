@@ -13,7 +13,7 @@ use ruler::enumo::Workload;
 fn halide_handwritten_ruleset() -> InferredFacts<LLVMLang> {
     let mut results: Vec<Rewrite<LLVMLang>> = vec![];
 
-    // min(z, y) < min(x, y + c0) ==>  min(z, y) < x if  c0 > 0
+    // x * c0 < y * c0 ~> x < y if c0 > 0
     results.push(
         Rewrite::new(
             Some(PredicateTerm::from_term(Term::Call(
@@ -24,70 +24,46 @@ fn halide_handwritten_ruleset() -> InferredFacts<LLVMLang> {
                 LLVMLangOp::Lt,
                 vec![
                     Term::Call(
-                        LLVMLangOp::Min,
-                        vec![Term::Var("z".into()), Term::Var("y".into())],
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("x".into()), Term::Var("c0".into())],
                     ),
                     Term::Call(
-                        LLVMLangOp::Min,
-                        vec![
-                            Term::Var("x".into()),
-                            Term::Call(
-                                LLVMLangOp::Add,
-                                vec![Term::Var("y".into()), Term::Var("c0".into())],
-                            ),
-                        ],
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("y".into()), Term::Var("c0".into())],
                     ),
                 ],
             ),
             Term::Call(
                 LLVMLangOp::Lt,
-                vec![
-                    Term::Call(
-                        LLVMLangOp::Min,
-                        vec![Term::Var("z".into()), Term::Var("y".into())],
-                    ),
-                    Term::Var("x".into()),
-                ],
+                vec![Term::Var("x".into()), Term::Var("y".into())],
             ),
         )
         .unwrap(),
     );
 
-    // min(z, y) < min(y + c0, x) ==>  min(z, y) < x if  c0 > 0
+    // x * c0 < y * c0 ==>  y < x if  c0 < 0
     results.push(
         Rewrite::new(
             Some(PredicateTerm::from_term(Term::Call(
-                LLVMLangOp::Gt,
+                LLVMLangOp::Lt,
                 vec![Term::Var("c0".into()), Term::Const(0)],
             ))),
             Term::Call(
                 LLVMLangOp::Lt,
                 vec![
                     Term::Call(
-                        LLVMLangOp::Min,
-                        vec![Term::Var("z".into()), Term::Var("y".into())],
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("x".into()), Term::Var("c0".into())],
                     ),
                     Term::Call(
-                        LLVMLangOp::Min,
-                        vec![
-                            Term::Call(
-                                LLVMLangOp::Add,
-                                vec![Term::Var("y".into()), Term::Var("c0".into())],
-                            ),
-                            Term::Var("x".into()),
-                        ],
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("y".into()), Term::Var("c0".into())],
                     ),
                 ],
             ),
             Term::Call(
                 LLVMLangOp::Lt,
-                vec![
-                    Term::Call(
-                        LLVMLangOp::Min,
-                        vec![Term::Var("z".into()), Term::Var("y".into())],
-                    ),
-                    Term::Var("x".into()),
-                ],
+                vec![Term::Var("y".into()), Term::Var("x".into())],
             ),
         )
         .unwrap(),
