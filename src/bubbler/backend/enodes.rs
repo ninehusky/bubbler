@@ -13,7 +13,6 @@ pub type ENodeId = usize;
 pub struct ENode {
     pub op: &'static str,
     pub children: Vec<EClassId>,
-    pub owner: EClassId,
 }
 
 #[derive(Default)]
@@ -27,17 +26,11 @@ impl ENodeRegistry {
         Self::default()
     }
 
-    pub fn add_enode(
-        &mut self,
-        op: &'static str,
-        children: Vec<EClassId>,
-        owner: EClassId,
-    ) -> ENodeId {
+    pub fn add_enode(&mut self, op: &'static str, children: Vec<EClassId>) -> ENodeId {
         let id = self.enodes.len();
         self.enodes.push(ENode {
             op,
             children: children.clone(),
-            owner: owner.clone(),
         });
 
         for c in children {
@@ -45,5 +38,9 @@ impl ENodeRegistry {
         }
 
         id
+    }
+
+    pub fn len(&self) -> usize {
+        self.enodes.len()
     }
 }

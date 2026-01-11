@@ -46,7 +46,19 @@ impl<L: Language> Identification<L> for CvecMatch<L> {
                     let lhs = terms[i].clone();
                     let rhs = terms[j].clone();
 
-                    if let Ok(rw) = Rewrite::new(None, lhs, rhs) {
+                    // Forward direction.
+                    if let Ok(rw) = Rewrite::new(None, lhs.clone(), rhs.clone()) {
+                        if candidates.contains(&rw) {
+                            continue;
+                        }
+                        candidates.push(rw.clone());
+                    }
+
+                    // Backward direction.
+                    if let Ok(rw) = Rewrite::new(None, rhs, lhs) {
+                        if candidates.contains(&rw) {
+                            continue;
+                        }
                         candidates.push(rw.clone());
                     }
                 }
@@ -338,7 +350,7 @@ pub mod cond_cvec_match_test {
     fn conditional_cvec_match_finds_conditional_rewrites() {
         let bubbler =
             Bubbler::<LLVMLang>::new(BubblerConfig::new(vec!["x".into()], vec![-1, 0, 1]));
-        let mut backend = EgglogBackend::<LLVMLang>::new();
+        let mut backend = EgglogBackend::<LLVMLang>::new().with_environment(bubbler.environment);
         backend
             .register(
                 &Rewrite::new(
@@ -375,42 +387,23 @@ pub mod cond_cvec_match_test {
             vec![Term::Var("x".into()), Term::Var("x".into())],
         );
 
-        backend
-            .add_term(
-                Term::Const(1),
-                Some(Term::Const(1).evaluate(&bubbler.environment)),
-            )
-            .unwrap();
+        backend.add_term(Term::Const(1), true).unwrap();
 
-        backend
-            .add_term(
-                x_div_x.clone(),
-                Some(x_div_x.evaluate(&bubbler.environment)),
-            )
-            .unwrap();
+        backend.add_term(x_div_x.clone(), true).unwrap();
 
         let x_gt_0 = Term::Call(LLVMLangOp::Gt, vec![Term::Var("x".into()), Term::Const(0)]);
         backend
-            .add_predicate(
-                PredicateTerm::from_term(x_gt_0.clone()),
-                Some(x_gt_0.evaluate(&bubbler.environment).to_pvec()),
-            )
+            .add_predicate(PredicateTerm::from_term(x_gt_0.clone()), true)
             .unwrap();
 
         let x_lt_0 = Term::Call(LLVMLangOp::Lt, vec![Term::Var("x".into()), Term::Const(0)]);
         backend
-            .add_predicate(
-                PredicateTerm::from_term(x_lt_0.clone()),
-                Some(x_lt_0.evaluate(&bubbler.environment).to_pvec()),
-            )
+            .add_predicate(PredicateTerm::from_term(x_lt_0.clone()), true)
             .unwrap();
 
         let x_neq_0 = Term::Call(LLVMLangOp::Neq, vec![Term::Var("x".into()), Term::Const(0)]);
         backend
-            .add_predicate(
-                PredicateTerm::from_term(x_neq_0.clone()),
-                Some(x_neq_0.evaluate(&bubbler.environment).to_pvec()),
-            )
+            .add_predicate(PredicateTerm::from_term(x_neq_0.clone()), true)
             .unwrap();
 
         // NOTE: the order here is pretty important. If you run implications first, then

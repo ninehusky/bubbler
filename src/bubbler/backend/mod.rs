@@ -9,7 +9,7 @@ use egglog::{
     },
     call, lit,
     prelude::{add_function, add_relation, add_ruleset, RustSpan, Span},
-    span, var, CommandOutput, EGraph, TermDag,
+    span, var, CommandOutput, EGraph,
 };
 use enodes::{EClassId, ENodeRegistry};
 use intern::InternStore;
@@ -20,7 +20,7 @@ use crate::{
         constant::BubbleConstant,
         rewrite::Rewrite,
         term::{PredicateTerm, Term},
-        CVec, Language, OpTrait, PVec,
+        CVec, Environment, Language, OpTrait, PVec,
     },
 };
 
@@ -65,6 +65,7 @@ type PVecStore = InternStore<PVec>;
 
 pub struct EgglogBackend<L: Language> {
     pub egraph: EGraph,
+    environment: Environment<L>,
     next_eclass: usize,
     enode_registry: ENodeRegistry,
     cvec_store: CVecStore<L>,
@@ -84,9 +85,23 @@ impl<L: Language> EgglogBackend<L> {
         let egraph = Self::setup_egraph();
         Self {
             egraph,
+            environment: Default::default(),
             next_eclass: usize::default(),
             enode_registry: ENodeRegistry::new(),
             cvec_store: CVecStore::<L>::new(),
+            pvec_store: PVecStore::new(),
+            _marker: std::marker::PhantomData,
+        }
+    }
+
+    pub fn with_environment(&self, environment: Environment<L>) -> Self {
+        let egraph = Self::setup_egraph();
+        Self {
+            egraph,
+            cvec_store: CVecStore::new(),
+            environment,
+            next_eclass: usize::default(),
+            enode_registry: ENodeRegistry::new(),
             pvec_store: PVecStore::new(),
             _marker: std::marker::PhantomData,
         }
@@ -436,10 +451,18 @@ impl<L: Language> EgglogBackend<L> {
             panic!("Expected PrintFunctionOutput.");
         };
 
+        // self.egraph
+        //     .parse_and_run_program(
+        //         None,
+        //         r#"(check (= (Ge (Var "x") (Var "y")) (Le (Var "y") (Var "x"))))"#,
+        //     )
+        //     .unwrap();
+
         let mut res: HashMap<PVec, Vec<PredicateTerm<L>>> = HashMap::new();
 
         for (term, _) in terms_and_outputs {
             let expr: egglog::ast::Expr = termdag.term_to_expr(term, span!());
+
             match expr {
                 Expr::Call(_, ref op, ref args) if op == bubbler_defns::HAS_PVEC_RELATION => {
                     assert_eq!(args.len(), 2);
@@ -485,11 +508,10 @@ impl<L: Language> EgglogBackend<L> {
                 rule: GenericRule {
                     span: span!(),
                     // union the LHS and RHS when...
-                    head: GenericActions(vec![GenericAction::Union(
-                        span!(),
-                        lhs.clone().into(),
-                        rhs.clone().into(),
-                    )]),
+                    head: GenericActions(vec![
+                        // GenericAction::Panic(span!(), "blah".to_string()),
+                        GenericAction::Union(span!(), lhs.clone().into(), rhs.clone().into()),
+                    ]),
                     // ...we can see that the LHS is in the egraph.
                     body: vec![GenericFact::Fact(lhs.clone().into())],
                     name: format!("{}", rule),
@@ -599,15 +621,26 @@ impl<L: Language> EgglogBackend<L> {
         Ok(*eclass_id as usize)
     }
 
-    pub fn add_term(&mut self, term: Term<L>, cvec: Option<CVec<L>>) -> Result<EClassId, String> {
+    pub fn add_term(&mut self, term: Term<L>, with_cvec: bool) -> Result<EClassId, String> {
         let mut commands = vec![];
+
+        if let Term::Call(op, children) = &term {
+            // first, add all the children.
+            let children: Vec<EClassId> = children
+                .iter()
+                .map(|child_term| self.add_term(child_term.clone(), with_cvec))
+                .collect::<Result<_, _>>()?;
+            self.enode_registry.add_enode(op.name(), children);
+        }
+        println!("adding term: {}", term);
 
         commands.push(GenericCommand::Action(GenericAction::Expr(
             span!(),
             term.clone().into(),
         )));
 
-        if let Some(cvec) = cvec {
+        if with_cvec {
+            let cvec = term.evaluate(&self.environment);
             // 1. store the cvec in the cvec store.
             let hash = self.cvec_store.intern(cvec);
 
@@ -647,8 +680,9 @@ impl<L: Language> EgglogBackend<L> {
     pub fn add_predicate(
         &mut self,
         predicate: PredicateTerm<L>,
-        pvec: Option<PVec>,
+        add_pvec: bool,
     ) -> Result<(), String> {
+        println!("adding predicate: {}", predicate.term);
         let mut commands = vec![];
 
         commands.push(GenericCommand::Action(GenericAction::Expr(
@@ -659,7 +693,8 @@ impl<L: Language> EgglogBackend<L> {
             ),
         )));
 
-        if let Some(pvec) = pvec {
+        if add_pvec {
+            let pvec = predicate.term.evaluate(&self.environment).to_pvec();
             // 1. store the pvec in the pvec store.
             let hash = self.pvec_store.intern(pvec);
 
@@ -965,7 +1000,7 @@ mod tests {
                         vec![Term::Var("a".into()), Term::Const(1.into())],
                     ),
                 },
-                None,
+                false,
             )
             .unwrap();
 
@@ -991,7 +1026,7 @@ mod tests {
                     LLVMLangOp::Add,
                     vec![Term::Const(1.into()), Term::Const(2.into())],
                 ),
-                None,
+                false,
             )
             .unwrap();
         let result = backend
@@ -1011,6 +1046,56 @@ mod tests {
                 _ => (),
             }
         }
+    }
+
+    #[test]
+    fn add_total_rewrite_le_ge() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+        // observe that the rewrite contains _holes_ for metavariables.
+        let rewrite = Rewrite::Unconditional {
+            lhs: Term::Call(
+                LLVMLangOp::Le,
+                vec![Term::Hole("?x".into()), Term::Hole("?y".into())],
+            ),
+            rhs: Term::Call(
+                LLVMLangOp::Ge,
+                vec![Term::Hole("?y".into()), Term::Hole("?x".into())],
+            ),
+        };
+
+        backend.register(&rewrite).unwrap();
+
+        // Add a predicate that matches the LHS of the rewrite.
+        backend
+            .add_predicate(
+                PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Le,
+                    vec![Term::Var("a".into()), Term::Var("b".into())],
+                )),
+                false,
+            )
+            .unwrap();
+
+        backend
+            .add_term(
+                Term::Call(
+                    LLVMLangOp::Ge,
+                    vec![Term::Var("b".into()), Term::Var("a".into())],
+                ),
+                false,
+            )
+            .unwrap();
+
+        backend.run_rewrites().unwrap();
+
+        // Check that the egraph contains the RHS term, and that it is unioned with the LHS term.
+        backend
+            .egraph
+            .parse_and_run_program(
+                None,
+                "(check (= (Ge (Var \"b\") (Var \"a\")) (Le (Var \"a\") (Var \"b\"))) )",
+            )
+            .unwrap();
     }
 
     #[test]
@@ -1034,7 +1119,7 @@ mod tests {
                     LLVMLangOp::Add,
                     vec![Term::Const(0.into()), Term::Var("y".into())],
                 ),
-                None,
+                false,
             )
             .unwrap();
 
@@ -1072,7 +1157,7 @@ mod tests {
                     LLVMLangOp::Add,
                     vec![Term::Var("a".into()), Term::Const(0.into())],
                 ),
-                None,
+                false,
             )
             .unwrap();
 
@@ -1110,7 +1195,7 @@ mod tests {
                     LLVMLangOp::Div,
                     vec![Term::Var("a".into()), Term::Var("a".into())],
                 ),
-                None,
+                false,
             )
             .unwrap();
 
@@ -1143,9 +1228,6 @@ mod tests {
     #[test]
     fn get_cvec_map_ok() {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
-        // Add a term with a CVec.
-        let cvec: CVec<LLVMLang> = vec![Some(1), Some(2), None].into_iter().collect();
-
         let one_plus_two: Term<LLVMLang> = Term::Call(
             LLVMLangOp::Add,
             vec![Term::Const(1.into()), Term::Const(2.into())],
@@ -1156,16 +1238,15 @@ mod tests {
             vec![Term::Const(2.into()), Term::Const(1.into())],
         );
 
-        backend
-            .add_term(one_plus_two.clone(), Some(cvec.clone()))
-            .unwrap();
+        let cvec = two_plus_one.evaluate(&backend.environment);
 
-        backend
-            .add_term(two_plus_one.clone(), Some(cvec.clone()))
-            .unwrap();
+        backend.add_term(one_plus_two.clone(), true).unwrap();
+
+        backend.add_term(two_plus_one.clone(), true).unwrap();
 
         let cvec_map = backend.get_cvec_map();
-        assert_eq!(cvec_map.len(), 1);
+        // 3 terms: 1, 2, and 1 + 2
+        assert_eq!(cvec_map.len(), 3);
         let terms = cvec_map.get(&cvec).unwrap();
         assert_eq!(terms.len(), 2);
         assert!(terms.contains(&one_plus_two));
@@ -1174,9 +1255,9 @@ mod tests {
 
     #[test]
     fn get_pvec_map_ok() {
-        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
-        // Add a predicate with a PVec.
-        let pvec: PVec = vec![true, false, true].into_iter().collect::<PVec>();
+        let mut env: Environment<LLVMLang> = Default::default();
+        env.insert("x".into(), vec![1, 2, 5, 10, 50, 100]);
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new().with_environment(env);
 
         let predicate_a: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
             LLVMLangOp::Lt,
@@ -1185,18 +1266,16 @@ mod tests {
 
         let predicate_b: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
             LLVMLangOp::Gt,
-            vec![Term::Var("y".into()), Term::Const(5.into())],
+            vec![Term::Const(10.into()), Term::Var("x".into())],
         ));
 
-        backend
-            .add_predicate(predicate_a.clone(), Some(pvec.clone()))
-            .unwrap();
+        let pvec = predicate_a.term.evaluate(&backend.environment).to_pvec();
 
-        backend
-            .add_predicate(predicate_b.clone(), Some(pvec.clone()))
-            .unwrap();
+        backend.add_predicate(predicate_a.clone(), true).unwrap();
+        backend.add_predicate(predicate_b.clone(), true).unwrap();
 
         let pvec_map = backend.get_pvec_map();
+
         assert_eq!(pvec_map.len(), 1);
         let terms = pvec_map.get(&pvec).unwrap();
         assert_eq!(terms.len(), 2);
@@ -1212,9 +1291,9 @@ mod tests {
         // x != 0  =>  x / x == 1
 
         // introduce three variables, a, b, c.
-        backend.add_term(Term::Var("a".into()), None).unwrap();
-        backend.add_term(Term::Var("b".into()), None).unwrap();
-        backend.add_term(Term::Var("c".into()), None).unwrap();
+        backend.add_term(Term::Var("a".into()), false).unwrap();
+        backend.add_term(Term::Var("b".into()), false).unwrap();
+        backend.add_term(Term::Var("c".into()), false).unwrap();
 
         // introduce two predicates, (!= a 0) and (> a 0).
         backend
@@ -1223,7 +1302,7 @@ mod tests {
                     LLVMLangOp::Neq,
                     vec![Term::Var("a".into()), Term::Const(0.into())],
                 )),
-                None,
+                false,
             )
             .unwrap();
         backend
@@ -1232,7 +1311,7 @@ mod tests {
                     LLVMLangOp::Gt,
                     vec![Term::Var("a".into()), Term::Const(0.into())],
                 )),
-                None,
+                false,
             )
             .unwrap();
 
@@ -1291,9 +1370,37 @@ mod tests {
             LLVMLangOp::Add,
             vec![Term::Var("x".into()), Term::Var("y".into())],
         );
-        let id = backend.add_term(term.clone(), None).unwrap();
+        let id = backend.add_term(term.clone(), false).unwrap();
         let fetched_id = backend.get_eclass_id(&term).unwrap();
 
         assert_eq!(id, fetched_id);
+    }
+
+    #[test]
+    fn eclass_id_for_atom() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+        let term = Term::Var("z".into());
+        let id = backend.add_term(term.clone(), false).unwrap();
+        let fetched_id = backend.get_eclass_id(&term).unwrap();
+
+        assert_eq!(id, fetched_id);
+    }
+
+    #[test]
+    fn makes_enodes_ok() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+        let term = Term::Call(
+            LLVMLangOp::Mul,
+            vec![
+                Term::Call(
+                    LLVMLangOp::Add,
+                    vec![Term::Const(3.into()), Term::Const(4.into())],
+                ),
+                Term::Const(5.into()),
+            ],
+        );
+        backend.add_term(term.clone(), false).unwrap();
+
+        assert_eq!(2, backend.enode_registry.len());
     }
 }

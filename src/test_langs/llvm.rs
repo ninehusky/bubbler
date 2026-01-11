@@ -4,7 +4,7 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use crate::language::{Language, OpTrait, constant::BubbleConstant};
+use crate::language::{constant::BubbleConstant, Language, OpTrait};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct LLVMLang;
@@ -353,6 +353,7 @@ mod tests {
         assert!(conditional.is_empty(), "Expected no conditional rewrites");
 
         for r in rewrites {
+            println!("Discovered rewrite: {}", r);
             bubbler.register_rewrite(&r).unwrap();
         }
 
@@ -361,6 +362,10 @@ mod tests {
         let InferredFacts::Implications(implications) = implications else {
             panic!("Expected implications");
         };
+
+        for imp in &implications {
+            println!("Discovered implication: {}", imp);
+        }
 
         // We went from 8 to 3 implications!
         assert_eq!(implications.len(), 3);

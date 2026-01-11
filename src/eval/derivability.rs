@@ -29,11 +29,11 @@ pub fn can_derive<L: Language>(
     let mut backend = bubbler.new_backend();
 
     // 2. Add the target rewrite's LHS, RHS, and condition (if any) to the backend.
-    backend.add_term(target.lhs_concrete(), None).unwrap();
-    backend.add_term(target.rhs_concrete(), None).unwrap();
+    backend.add_term(target.lhs_concrete(), false).unwrap();
+    backend.add_term(target.rhs_concrete(), false).unwrap();
 
     if let Some(cond) = target.cond_concrete() {
-        backend.add_predicate(cond, None).unwrap();
+        backend.add_predicate(cond, false).unwrap();
     }
 
     let mut is_derived = false;

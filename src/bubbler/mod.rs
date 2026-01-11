@@ -1,9 +1,10 @@
 use backend::EgglogBackend;
+use egglog::SerializeConfig;
 use identification::{
     ConditionalCvecMatch, CvecMatch, IdentificationConfig, IdentificationMode, PvecMatch,
 };
-use minimization::BasicImplicationMinimize;
 use minimization::score_fns::implication_score_fns;
+use minimization::BasicImplicationMinimize;
 use ruler::enumo::Workload;
 use schedule::{Enumeration, Identification, Minimization};
 
@@ -11,7 +12,7 @@ use crate::colors::implication::Implication;
 use crate::language::constant::BubbleConstant;
 use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
-use crate::language::{CVec, Environment, Language, term::Term};
+use crate::language::{term::Term, CVec, Environment, Language};
 
 mod backend;
 mod enumeration;
@@ -85,9 +86,36 @@ impl<L: Language> Bubbler<L> {
             .enumerate_bubbler(&mut backend, wkld.clone())
             .unwrap();
 
+        backend
+            .egraph
+            .parse_and_run_program(None, r#"(check (Ge (Var "x") (Var "y")))"#)
+            .unwrap();
+
+        backend
+            .egraph
+            .parse_and_run_program(None, r#"(check (Le (Var "y") (Var "x")))"#)
+            .unwrap();
+
+        for rule in self.rules.clone() {
+            println!("my rule: {}", rule);
+        }
         // 2. Run the existing rules and implications.
         backend.run_rewrites().unwrap();
         backend.run_implications().unwrap();
+        backend.run_rewrites().unwrap();
+        backend.run_rewrites().unwrap();
+        backend.run_rewrites().unwrap();
+
+        // the above two terms should be equivalent now.
+        backend
+            .egraph
+            .parse_and_run_program(
+                None,
+                r#"(check (= (Ge (Var "x") (Var "y")) (Le (Var "y") (Var "x"))))"#,
+            )
+            .unwrap();
+
+        // this fails?
 
         // 3. Identify candidates for implications from the predicates.
         let imp_candidates = PvecMatch::new(IdentificationConfig {
@@ -214,7 +242,7 @@ impl<L: Language> Bubbler<L> {
             backend.register_implication(imp).unwrap();
         }
 
-        backend
+        backend.with_environment(self.environment.clone())
     }
 
     pub fn register_implication(&mut self, imp: &Implication<L>) -> Result<(), String> {
@@ -276,26 +304,7 @@ impl<L: Language> Bubbler<L> {
             return Err("Predicates must be concrete.".into());
         }
 
-        let pvec = if add_pvec {
-            Some(
-                predicate
-                    .term
-                    .evaluate(&self.environment)
-                    .iter()
-                    .map(|c| match c {
-                        None => false,
-                        Some(c) => {
-                            let bc: BubbleConstant = L::constant_to_bubble(c);
-                            bc.to_bool()
-                        }
-                    })
-                    .collect(),
-            )
-        } else {
-            None
-        };
-
-        backend.add_predicate(predicate.clone(), pvec).unwrap();
+        backend.add_predicate(predicate.clone(), add_pvec).unwrap();
         Ok(())
     }
 
@@ -312,13 +321,7 @@ impl<L: Language> Bubbler<L> {
             return Err("Terms must be concrete.".into());
         }
 
-        let cvec: Option<CVec<L>> = if add_cvec {
-            Some(term.evaluate(&self.environment))
-        } else {
-            None
-        };
-
-        backend.add_term(term.clone(), cvec).unwrap();
+        backend.add_term(term.clone(), add_cvec).unwrap();
         Ok(())
     }
 }
