@@ -1,7 +1,7 @@
 use std::vec;
 
 use bubbler::bubbler::{Bubbler, BubblerConfig, InferredFacts};
-use bubbler::colors::Implication;
+use bubbler::colors::{Condition, Implication};
 use bubbler::eval::{report::NightlyReport, stats::EvalStats};
 use bubbler::language::{PredicateTerm, Rewrite, Term};
 use bubbler::record;
@@ -72,6 +72,273 @@ fn halide_handwritten_ruleset() -> InferredFacts<LLVMLang> {
     InferredFacts::Rewrites(results)
 }
 
+fn fake_inferred_ruleset() -> (Vec<Rewrite<LLVMLang>>, Vec<Implication<LLVMLang>>) {
+    let mut ruleset = vec![];
+
+    // a < b ~> b > a
+    ruleset.push(
+        Rewrite::new(
+            None,
+            Term::Call(
+                LLVMLangOp::Lt,
+                vec![Term::Var("a".into()), Term::Var("b".into())],
+            ),
+            Term::Call(
+                LLVMLangOp::Gt,
+                vec![Term::Var("b".into()), Term::Var("a".into())],
+            ),
+        )
+        .unwrap(),
+    );
+
+    // a < b ~> (b - a) > 0
+    ruleset.push(
+        Rewrite::new(
+            None,
+            Term::Call(
+                LLVMLangOp::Lt,
+                vec![Term::Var("a".into()), Term::Var("b".into())],
+            ),
+            Term::Call(
+                LLVMLangOp::Gt,
+                vec![
+                    Term::Call(
+                        LLVMLangOp::Sub,
+                        vec![Term::Var("b".into()), Term::Var("a".into())],
+                    ),
+                    Term::Const(0),
+                ],
+            ),
+        )
+        .unwrap(),
+    );
+
+    // x * z - y * z ~> z * (x - y)
+    ruleset.push(
+        Rewrite::new(
+            None,
+            Term::Call(
+                LLVMLangOp::Sub,
+                vec![
+                    Term::Call(
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("x".into()), Term::Var("z".into())],
+                    ),
+                    Term::Call(
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("y".into()), Term::Var("z".into())],
+                    ),
+                ],
+            ),
+            Term::Call(
+                LLVMLangOp::Mul,
+                vec![
+                    Term::Var("z".into()),
+                    Term::Call(
+                        LLVMLangOp::Sub,
+                        vec![Term::Var("x".into()), Term::Var("y".into())],
+                    ),
+                ],
+            ),
+        )
+        .unwrap(),
+    );
+
+    // if b > 0 then a * b > c ~> a > c / b
+    ruleset.push(
+        Rewrite::new(
+            Some(PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Gt,
+                vec![Term::Var("b".into()), Term::Const(0)],
+            ))),
+            Term::Call(
+                LLVMLangOp::Gt,
+                vec![
+                    Term::Call(
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("a".into()), Term::Var("b".into())],
+                    ),
+                    Term::Var("c".into()),
+                ],
+            ),
+            Term::Call(
+                LLVMLangOp::Gt,
+                vec![
+                    Term::Var("a".into()),
+                    Term::Call(
+                        LLVMLangOp::Div,
+                        vec![Term::Var("c".into()), Term::Var("b".into())],
+                    ),
+                ],
+            ),
+        )
+        .unwrap(),
+    );
+
+    // (b - a) > 0 ~> a < b
+    ruleset.push(
+        Rewrite::new(
+            None,
+            Term::Call(
+                LLVMLangOp::Gt,
+                vec![
+                    Term::Call(
+                        LLVMLangOp::Sub,
+                        vec![Term::Var("b".into()), Term::Var("a".into())],
+                    ),
+                    Term::Const(0),
+                ],
+            ),
+            Term::Call(
+                LLVMLangOp::Lt,
+                vec![Term::Var("a".into()), Term::Var("b".into())],
+            ),
+        )
+        .unwrap(),
+    );
+
+    // if b < 0 then a * b > c ~> a < c / b
+    ruleset.push(
+        Rewrite::new(
+            Some(PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Lt,
+                vec![Term::Var("b".into()), Term::Const(0)],
+            ))),
+            Term::Call(
+                LLVMLangOp::Gt,
+                vec![
+                    Term::Call(
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("a".into()), Term::Var("b".into())],
+                    ),
+                    Term::Var("c".into()),
+                ],
+            ),
+            Term::Call(
+                LLVMLangOp::Lt,
+                vec![
+                    Term::Var("a".into()),
+                    Term::Call(
+                        LLVMLangOp::Div,
+                        vec![Term::Var("c".into()), Term::Var("b".into())],
+                    ),
+                ],
+            ),
+        )
+        .unwrap(),
+    );
+
+    // (b - a) < c ~> b < a + c
+    ruleset.push(
+        Rewrite::new(
+            None,
+            Term::Call(
+                LLVMLangOp::Lt,
+                vec![
+                    Term::Call(
+                        LLVMLangOp::Sub,
+                        vec![Term::Var("b".into()), Term::Var("a".into())],
+                    ),
+                    Term::Var("c".into()),
+                ],
+            ),
+            Term::Call(
+                LLVMLangOp::Lt,
+                vec![
+                    Term::Var("b".into()),
+                    Term::Call(
+                        LLVMLangOp::Add,
+                        vec![Term::Var("a".into()), Term::Var("c".into())],
+                    ),
+                ],
+            ),
+        )
+        .unwrap(),
+    );
+
+    // x + 0 ~> x
+    ruleset.push(
+        Rewrite::new(
+            None,
+            Term::Call(LLVMLangOp::Add, vec![Term::Var("x".into()), Term::Const(0)]),
+            Term::Var("x".into()),
+        )
+        .unwrap(),
+    );
+
+    // a + b ~> b + a
+    ruleset.push(
+        Rewrite::new(
+            None,
+            Term::Call(
+                LLVMLangOp::Add,
+                vec![Term::Var("a".into()), Term::Var("b".into())],
+            ),
+            Term::Call(
+                LLVMLangOp::Add,
+                vec![Term::Var("b".into()), Term::Var("a".into())],
+            ),
+        )
+        .unwrap(),
+    );
+
+    // a * b / b ~> a if b != 0
+    ruleset.push(
+        Rewrite::new(
+            Some(PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Neq,
+                vec![Term::Var("b".into()), Term::Const(0)],
+            ))),
+            Term::Call(
+                LLVMLangOp::Div,
+                vec![
+                    Term::Call(
+                        LLVMLangOp::Mul,
+                        vec![Term::Var("a".into()), Term::Var("b".into())],
+                    ),
+                    Term::Var("b".into()),
+                ],
+            ),
+            Term::Var("a".into()),
+        )
+        .unwrap(),
+    );
+
+    let mut imps = vec![];
+
+    // a < b --> a != b
+    imps.push(
+        Implication::new(
+            Condition::from(PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Lt,
+                vec![Term::Var("a".into()), Term::Var("b".into())],
+            ))),
+            PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Neq,
+                vec![Term::Var("a".into()), Term::Var("b".into())],
+            )),
+        )
+        .unwrap(),
+    );
+
+    // a > b --> a != b
+    imps.push(
+        Implication::new(
+            Condition::from(PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Gt,
+                vec![Term::Var("a".into()), Term::Var("b".into())],
+            ))),
+            PredicateTerm::from_term(Term::Call(
+                LLVMLangOp::Neq,
+                vec![Term::Var("a".into()), Term::Var("b".into())],
+            )),
+        )
+        .unwrap(),
+    );
+
+    (ruleset, imps)
+}
+
 fn inferred_ruleset(stats: &mut EvalStats) -> (Vec<Rewrite<LLVMLang>>, Vec<Implication<LLVMLang>>) {
     // 2. bubbler config (keep tiny)
     let mut bubbler: Bubbler<LLVMLang> = Bubbler::new(BubblerConfig::new(
@@ -127,7 +394,8 @@ fn main() {
 
     let mut stats = EvalStats::default();
 
-    let (inferred_rewrites, inferred_implications) = inferred_ruleset(&mut stats);
+    // let (inferred_rewrites, inferred_implications) = inferred_ruleset(&mut stats);
+    let (inferred_rewrites, inferred_implications) = fake_inferred_ruleset();
 
     let InferredFacts::Rewrites(handwritten_rewrites) = halide_handwritten_ruleset() else {
         panic!("Expected handwritten rewrites");

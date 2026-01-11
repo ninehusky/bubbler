@@ -1,3 +1,5 @@
+use egglog::SerializeConfig;
+
 use crate::{
     bubbler::{Bubbler, BubblerConfig},
     colors::Implication,
@@ -49,6 +51,13 @@ pub fn can_derive<L: Language>(
         backend.run_implications().unwrap();
         backend.run_rewrites().unwrap();
 
+        println!(
+            "my target is to make sure that {} == {}",
+            target.lhs_concrete(),
+            target.rhs_concrete()
+        );
+        println!("the condition is {:?}", target.cond_concrete());
+
         is_derived = match &target {
             Rewrite::Conditional { .. } => backend
                 .is_conditionally_equal(
@@ -67,6 +76,42 @@ pub fn can_derive<L: Language>(
             break;
         }
     }
+
+    // write all the conditional equalities you've found so far.
+    let results = backend
+        .egraph
+        .parse_and_run_program(
+            None,
+            r#"(check (cond-equal
+(BaseTerm (Neq (Var "a") (Const 0)))
+(Div (Mul (Var "b") (Var "a")) (Var "a"))
+(Var "b")))"#,
+        )
+        .unwrap();
+
+    let result = backend
+        .egraph
+        .parse_and_run_program(
+            None,
+            r#"(check
+(cond-equal (BaseTerm (Neq (Var "a") (Const 0)))
+(Lt (Mul (Var "b") (Var "a")) (Mul (Var "c") (Var "a")))
+(Lt (Var "c") (Var "b"))))
+"#,
+        )
+        .unwrap();
+
+    for r in results {
+        println!("cond-equal: {}", r);
+    }
+
+    // write the egraph to disk for debugging
+    backend
+        .egraph
+        .serialize(SerializeConfig::default())
+        .egraph
+        .to_json_file("result.json")
+        .unwrap();
 
     is_derived
 }
