@@ -3,24 +3,23 @@
 use std::collections::HashMap;
 
 use egglog::{
-    CommandOutput, EGraph,
     ast::{
         Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
         GenericRunConfig, GenericSchedule, Variant,
     },
     call, lit,
-    prelude::{RustSpan, Span, add_relation, add_ruleset},
-    span, var,
+    prelude::{add_relation, add_ruleset, RustSpan, Span},
+    span, var, CommandOutput, EGraph,
 };
 use intern::InternStore;
 
 use crate::{
     colors::implication::Implication,
     language::{
-        CVec, Language, OpTrait, PVec,
         constant::BubbleConstant,
         rewrite::Rewrite,
         term::{PredicateTerm, Term},
+        CVec, Language, OpTrait, PVec,
     },
 };
 
@@ -687,6 +686,11 @@ impl<L: Language> EgglogBackend<L> {
             ))],
         )]);
 
+        let cond_as_egglog_str: egglog::ast::Expr = cond.clone().into();
+        println!("cond: {}", cond_as_egglog_str);
+        println!("lhs: {}", Expr::from(lhs.clone()));
+        println!("rhs: {}", Expr::from(rhs.clone()));
+
         match result {
             Ok(_) => Ok(true),
             Err(egglog::Error::CheckError(_, _)) => Ok(false),
@@ -1208,17 +1212,15 @@ mod tests {
             )
             .unwrap();
 
-        assert!(
-            !backend
-                .is_conditionally_equal(
-                    &PredicateTerm::from_term(Term::Call(
-                        LLVMLangOp::Gt,
-                        vec![Term::Var("a".into()), Term::Const(0.into())],
-                    )),
-                    &Term::Var("a".into()),
-                    &Term::Var("c".into()),
-                )
-                .unwrap()
-        );
+        assert!(!backend
+            .is_conditionally_equal(
+                &PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                )),
+                &Term::Var("a".into()),
+                &Term::Var("c".into()),
+            )
+            .unwrap());
     }
 }
