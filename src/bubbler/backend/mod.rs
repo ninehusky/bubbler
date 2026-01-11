@@ -3,27 +3,28 @@
 use std::collections::HashMap;
 
 use egglog::{
-    CommandOutput, EGraph,
     ast::{
         Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
-        GenericRunConfig, GenericSchedule, Variant,
+        GenericRunConfig, GenericSchedule, Schema, Variant,
     },
     call, lit,
-    prelude::{RustSpan, Span, add_relation, add_ruleset},
-    span, var,
+    prelude::{add_function, add_relation, add_ruleset, RustSpan, Span},
+    span, var, CommandOutput, EGraph, TermDag,
 };
+use enodes::{EClassId, ENodeRegistry};
 use intern::InternStore;
 
 use crate::{
     colors::implication::Implication,
     language::{
-        CVec, Language, OpTrait, PVec,
         constant::BubbleConstant,
         rewrite::Rewrite,
         term::{PredicateTerm, Term},
+        CVec, Language, OpTrait, PVec,
     },
 };
 
+mod enodes;
 mod intern;
 
 // A bunch of variables for storing names of relations/datatypes used in egglog programs.
@@ -39,6 +40,9 @@ pub(crate) mod bubbler_defns {
     pub const HAS_PVEC_RELATION: &str = "has-pvec";
     pub const COND_EQUAL_RELATION: &str = "cond-equal";
     pub const IMPLIES_RELATION: &str = "implies";
+
+    // Functions
+    pub const ECLASS_ID_FUNCTION: &str = "eclass-id";
 
     // NOTE(@ninehusky): I'm commenting these out for now. We need these for rewrites
     // like "for all terms in the universe, do X", but I can't really think of
@@ -61,8 +65,11 @@ type PVecStore = InternStore<PVec>;
 
 pub struct EgglogBackend<L: Language> {
     pub egraph: EGraph,
+    next_eclass: usize,
+    enode_registry: ENodeRegistry,
     cvec_store: CVecStore<L>,
     pvec_store: PVecStore,
+
     _marker: std::marker::PhantomData<L>,
 }
 
@@ -77,6 +84,8 @@ impl<L: Language> EgglogBackend<L> {
         let egraph = Self::setup_egraph();
         Self {
             egraph,
+            next_eclass: usize::default(),
+            enode_registry: ENodeRegistry::new(),
             cvec_store: CVecStore::<L>::new(),
             pvec_store: PVecStore::new(),
             _marker: std::marker::PhantomData,
@@ -214,11 +223,19 @@ impl<L: Language> EgglogBackend<L> {
 
         Self::add_predicate_axioms(&mut egraph);
 
+        add_function(
+            &mut egraph,
+            bubbler_defns::ECLASS_ID_FUNCTION,
+            Schema::new(vec![L::name().to_string()], "i64".to_string()),
+            Some(call!("min".to_string(), vec![var!("old"), var!("new")])),
+        )
+        .unwrap();
+
         egraph
     }
 
-    // This function just adds the core rule about reachability:
-    // if (path a b) and (path b c), then (path a c).
+    /// This function adds core axioms needed to reason about conditional
+    /// equality. It's going to be pretty unstable.
     fn add_predicate_axioms(egraph: &mut EGraph) {
         // TODO(@ninehusky): figure out if we need (path a a) for a base case.
         // I don't think we do, because you're not going to really query that.
@@ -548,7 +565,41 @@ impl<L: Language> EgglogBackend<L> {
         Ok(())
     }
 
-    pub fn add_term(&mut self, term: Term<L>, cvec: Option<CVec<L>>) -> Result<(), String> {
+    /// Gets the eclass ID for the given term.
+    // Equivalent to `(extract (eclass-id term))` in egglog.
+    pub fn get_eclass_id(&mut self, term: &Term<L>) -> Result<EClassId, String> {
+        let result = self
+            .egraph
+            .run_program(vec![GenericCommand::Extract(
+                span!(),
+                call!(
+                    bubbler_defns::ECLASS_ID_FUNCTION.to_string(),
+                    vec![term.clone().into()]
+                ),
+                lit!(1),
+            )])
+            .map_err(|e| format!("Failed to get eclass ID: {:?}", e))?;
+
+        let CommandOutput::ExtractVariants(_, terms) = &result[0] else {
+            return Err("Expected Action output.".to_string());
+        };
+
+        assert_eq!(terms.len(), 1, "Expected single output term for eclass ID.");
+
+        let term = &terms[0];
+
+        let egglog::Term::Lit(eclass_id) = term else {
+            return Err("Expected literal output for eclass ID.".to_string());
+        };
+
+        let egglog::ast::Literal::Int(eclass_id) = eclass_id else {
+            return Err("Expected integer literal for eclass ID.".to_string());
+        };
+
+        Ok(*eclass_id as usize)
+    }
+
+    pub fn add_term(&mut self, term: Term<L>, cvec: Option<CVec<L>>) -> Result<EClassId, String> {
         let mut commands = vec![];
 
         commands.push(GenericCommand::Action(GenericAction::Expr(
@@ -570,14 +621,27 @@ impl<L: Language> EgglogBackend<L> {
                     // So we just store it as a string.
                     vec![term.clone().into(), lit!(hash.to_string())]
                 ),
-            )))
+            )));
         }
+        // Add the eclass ID to the term.
+        commands.push(GenericCommand::Action(GenericAction::Set(
+            span!(),
+            bubbler_defns::ECLASS_ID_FUNCTION.to_string(),
+            vec![term.clone().into()],
+            lit!(self.next_eclass as i64),
+        )));
+
+        // Initialize the enode for the term into the registry.
 
         self.egraph
             .run_program(commands)
             .map_err(|e| format!("Failed to add term: {:?}", e))?;
 
-        Ok(())
+        let eclass_id = self.next_eclass;
+
+        self.next_eclass += 1;
+
+        Ok(eclass_id)
     }
 
     pub fn add_predicate(
@@ -1208,17 +1272,28 @@ mod tests {
             )
             .unwrap();
 
-        assert!(
-            !backend
-                .is_conditionally_equal(
-                    &PredicateTerm::from_term(Term::Call(
-                        LLVMLangOp::Gt,
-                        vec![Term::Var("a".into()), Term::Const(0.into())],
-                    )),
-                    &Term::Var("a".into()),
-                    &Term::Var("c".into()),
-                )
-                .unwrap()
+        assert!(!backend
+            .is_conditionally_equal(
+                &PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                )),
+                &Term::Var("a".into()),
+                &Term::Var("c".into()),
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn eclass_id_good() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+        let term = Term::Call(
+            LLVMLangOp::Add,
+            vec![Term::Var("x".into()), Term::Var("y".into())],
         );
+        let id = backend.add_term(term.clone(), None).unwrap();
+        let fetched_id = backend.get_eclass_id(&term).unwrap();
+
+        assert_eq!(id, fetched_id);
     }
 }
