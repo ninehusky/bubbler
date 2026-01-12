@@ -2,15 +2,15 @@ use backend::EgglogBackend;
 use identification::{
     ConditionalCvecMatch, CvecMatch, IdentificationConfig, IdentificationMode, PvecMatch,
 };
-use minimization::score_fns::implication_score_fns;
 use minimization::BasicImplicationMinimize;
+use minimization::score_fns::implication_score_fns;
 use ruler::enumo::Workload;
 use schedule::{Enumeration, Identification, Minimization};
 
 use crate::colors::implication::Implication;
 use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
-use crate::language::{term::Term, Environment, Language};
+use crate::language::{Environment, Language, term::Term};
 
 mod backend;
 mod enumeration;
