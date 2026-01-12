@@ -1,7 +1,4 @@
 //! This module defines the core language abstractions for Bubbler.
-//! Generally, this module should only describe the stuff you need to
-//! evaluate terms; e-graph/egglog stuff outside of `L::to_egglog_src`
-//! should go elsewhere.
 
 use std::{
     collections::HashMap,
