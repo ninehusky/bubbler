@@ -328,10 +328,8 @@ mod tests {
 
     #[test]
     fn find_implications_better_schedule() {
-        let mut bubbler: Bubbler<LLVMLang> = Bubbler::new(BubblerConfig::new(
-            vec!["x".into(), "y".into()],
-            vec![1, 2, 3],
-        ));
+        let mut bubbler: Bubbler<LLVMLang> =
+            Bubbler::new(BubblerConfig::new(vec!["x".into(), "y".into()], vec![]));
 
         let predicate_workload = Workload::new(&["(OP2 VAR VAR)"])
             .plug("OP2", &Workload::new(&["Gt", "Lt", "Ge", "Le", "Neq"]))

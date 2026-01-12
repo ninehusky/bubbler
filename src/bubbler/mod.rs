@@ -99,19 +99,24 @@ impl<L: Language> Bubbler<L> {
         for rule in self.rules.clone() {
             println!("my rule: {}", rule);
         }
+
+        backend
+            .egraph
+            .parse_and_run_program(
+                None,
+                r#"(rewrite (Le ?a ?b) (Ge ?b ?a) :ruleset term-rewrites)"#,
+            )
+            .unwrap();
         // 2. Run the existing rules and implications.
         backend.run_rewrites().unwrap();
         backend.run_implications().unwrap();
-        backend.run_rewrites().unwrap();
-        backend.run_rewrites().unwrap();
-        backend.run_rewrites().unwrap();
 
         // the above two terms should be equivalent now.
         backend
             .egraph
             .parse_and_run_program(
                 None,
-                r#"(check (= (Ge (Var "x") (Var "y")) (Le (Var "y") (Var "x"))))"#,
+                r#"(check (= (Le (Var "y") (Var "x")) (Ge (Var "x") (Var "y"))))"#,
             )
             .unwrap();
 
@@ -233,8 +238,9 @@ impl<L: Language> Bubbler<L> {
     /// Returns a new `EgglogBackend` that has been initialized with the Bubbler's
     /// inferred rules and implications.
     pub fn new_backend(&self) -> EgglogBackend<L> {
-        let mut backend = EgglogBackend::<L>::new();
+        let mut backend = EgglogBackend::<L>::new().with_environment(self.environment.clone());
         for rule in &self.rules {
+            println!("Registering {} into the rw set.", rule);
             backend.register(rule).unwrap();
         }
 
@@ -242,7 +248,7 @@ impl<L: Language> Bubbler<L> {
             backend.register_implication(imp).unwrap();
         }
 
-        backend.with_environment(self.environment.clone())
+        backend
     }
 
     pub fn register_implication(&mut self, imp: &Implication<L>) -> Result<(), String> {
