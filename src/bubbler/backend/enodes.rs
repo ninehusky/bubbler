@@ -4,8 +4,11 @@ use egglog::Value;
 
 // I just made some BULLSHIT!
 
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct EClassId(pub Value);
+
 #[allow(dead_code)]
-pub type EClassId = Value;
 pub type ENodeId = usize;
 
 /// Calling this an ENode is a bit of a misnomer.
