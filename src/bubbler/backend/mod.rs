@@ -94,17 +94,11 @@ impl<L: Language> EgglogBackend<L> {
         }
     }
 
-    pub fn with_environment(&self, environment: Environment<L>) -> Self {
-        let egraph = Self::setup_egraph();
-        Self {
-            egraph,
-            cvec_store: CVecStore::new(),
-            environment,
-            next_eclass: usize::default(),
-            enode_registry: ENodeRegistry::new(),
-            pvec_store: PVecStore::new(),
-            _marker: std::marker::PhantomData,
+    pub fn set_environment(&mut self, environment: Environment<L>) {
+        if self.environment != Default::default() {
+            panic!("Environment has already been set.");
         }
+        self.environment = environment;
     }
 
     #[allow(clippy::vec_init_then_push)]
@@ -632,7 +626,6 @@ impl<L: Language> EgglogBackend<L> {
                 .collect::<Result<_, _>>()?;
             self.enode_registry.add_enode(op.name(), children);
         }
-        println!("adding term: {}", term);
 
         commands.push(GenericCommand::Action(GenericAction::Expr(
             span!(),
@@ -682,7 +675,6 @@ impl<L: Language> EgglogBackend<L> {
         predicate: PredicateTerm<L>,
         add_pvec: bool,
     ) -> Result<(), String> {
-        println!("adding predicate: {}", predicate.term);
         let mut commands = vec![];
 
         commands.push(GenericCommand::Action(GenericAction::Expr(
@@ -1257,7 +1249,9 @@ mod tests {
     fn get_pvec_map_ok() {
         let mut env: Environment<LLVMLang> = Default::default();
         env.insert("x".into(), vec![1, 2, 5, 10, 50, 100]);
-        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new().with_environment(env);
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+
+        backend.set_environment(env);
 
         let predicate_a: PredicateTerm<LLVMLang> = PredicateTerm::from_term(Term::Call(
             LLVMLangOp::Lt,

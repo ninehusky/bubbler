@@ -1,9 +1,9 @@
 //! This file contains the matching strategies used in Chompy's implementation.
 
 use crate::{
-    bubbler::{InferredFacts, backend::EgglogBackend, schedule::Identification},
+    bubbler::{backend::EgglogBackend, schedule::Identification, InferredFacts},
     colors::implication::Implication,
-    language::{CVec, Language, PVec, rewrite::Rewrite},
+    language::{rewrite::Rewrite, CVec, Language, PVec},
 };
 
 use super::IdentificationConfig;
@@ -162,10 +162,10 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
 mod tests {
     use crate::{
         bubbler::{
-            Bubbler, BubblerConfig,
             enumeration::{BasicEnumerate, EnumerationConfig, EnumerationMode},
             identification::{IdentificationConfig, IdentificationMode},
             schedule::{Enumeration, Identification},
+            Bubbler, BubblerConfig,
         },
         test_langs::llvm::LLVMLang,
     };
@@ -340,7 +340,7 @@ impl<L: Language> Identification<L> for ConditionalCvecMatch<L> {
 #[cfg(test)]
 pub mod cond_cvec_match_test {
     use crate::{
-        bubbler::{Bubbler, BubblerConfig, identification::IdentificationMode},
+        bubbler::{identification::IdentificationMode, Bubbler, BubblerConfig},
         language::{PredicateTerm, Term},
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
@@ -350,7 +350,8 @@ pub mod cond_cvec_match_test {
     fn conditional_cvec_match_finds_conditional_rewrites() {
         let bubbler =
             Bubbler::<LLVMLang>::new(BubblerConfig::new(vec!["x".into()], vec![-1, 0, 1]));
-        let mut backend = EgglogBackend::<LLVMLang>::new().with_environment(bubbler.environment);
+        let mut backend = EgglogBackend::<LLVMLang>::new();
+        backend.set_environment(bubbler.environment.clone());
         backend
             .register(
                 &Rewrite::new(
@@ -424,26 +425,22 @@ pub mod cond_cvec_match_test {
         };
 
         assert_eq!(candidates.len(), 2);
-        assert!(
-            candidates.contains(
-                &Rewrite::new(
-                    Some(PredicateTerm::from_term(x_gt_0)),
-                    x_div_x.clone(),
-                    Term::Const(1),
-                )
-                .unwrap()
+        assert!(candidates.contains(
+            &Rewrite::new(
+                Some(PredicateTerm::from_term(x_gt_0)),
+                x_div_x.clone(),
+                Term::Const(1),
             )
-        );
+            .unwrap()
+        ));
 
-        assert!(
-            candidates.contains(
-                &Rewrite::new(
-                    Some(PredicateTerm::from_term(x_neq_0)),
-                    x_div_x.clone(),
-                    Term::Const(1),
-                )
-                .unwrap()
+        assert!(candidates.contains(
+            &Rewrite::new(
+                Some(PredicateTerm::from_term(x_neq_0)),
+                x_div_x.clone(),
+                Term::Const(1),
             )
-        );
+            .unwrap()
+        ));
     }
 }

@@ -96,10 +96,6 @@ impl<L: Language> Bubbler<L> {
             .parse_and_run_program(None, r#"(check (Le (Var "y") (Var "x")))"#)
             .unwrap();
 
-        for rule in self.rules.clone() {
-            println!("my rule: {}", rule);
-        }
-
         backend
             .egraph
             .parse_and_run_program(
@@ -238,9 +234,9 @@ impl<L: Language> Bubbler<L> {
     /// Returns a new `EgglogBackend` that has been initialized with the Bubbler's
     /// inferred rules and implications.
     pub fn new_backend(&self) -> EgglogBackend<L> {
-        let mut backend = EgglogBackend::<L>::new().with_environment(self.environment.clone());
+        let mut backend = EgglogBackend::<L>::new();
+        backend.set_environment(self.environment.clone());
         for rule in &self.rules {
-            println!("Registering {} into the rw set.", rule);
             backend.register(rule).unwrap();
         }
 
