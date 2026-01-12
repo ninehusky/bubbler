@@ -1,7 +1,7 @@
 use crate::{
     bubbler::{backend::EgglogBackend, schedule::Enumeration},
     language::{
-        Environment, Language,
+        Language,
         term::{PredicateTerm, Term},
     },
 };
@@ -11,15 +11,13 @@ use super::{EnumerationConfig, EnumerationMode};
 /// Adds all of the terms in the workload to the e-graph.
 pub struct BasicEnumerate<L: Language> {
     pub cfg: EnumerationConfig,
-    pub env: Environment<L>,
     _marker: std::marker::PhantomData<L>,
 }
 
 impl<L: Language> BasicEnumerate<L> {
-    pub fn new(cfg: EnumerationConfig, env: Environment<L>) -> BasicEnumerate<L> {
+    pub fn new(cfg: EnumerationConfig) -> BasicEnumerate<L> {
         Self {
             cfg,
-            env,
             _marker: std::marker::PhantomData::<L>,
         }
     }
@@ -34,19 +32,13 @@ impl<L: Language> Enumeration<L> for BasicEnumerate<L> {
         let cfg = self.cfg.clone();
         for sexp in workload.force() {
             let term: Term<L> = Term::from_sexp(&sexp)?;
-            let cvec = if cfg.evaluate {
-                Some(term.evaluate(&self.env))
-            } else {
-                None
-            };
             match cfg.mode {
                 EnumerationMode::Terms => {
-                    backend.add_term(term, cvec)?;
+                    backend.add_term(term, cfg.evaluate)?;
                 }
                 EnumerationMode::Predicates => {
-                    let pvec = cvec.map(|cvec| cvec.to_pvec());
                     let predicate = PredicateTerm::from_term(term);
-                    backend.add_predicate(predicate, pvec)?;
+                    backend.add_predicate(predicate, cfg.evaluate)?;
                 }
             }
         }

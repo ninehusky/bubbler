@@ -57,8 +57,8 @@ impl<'a, L: Language> Minimization<L> for BasicRewriteMinimize<'a, L> {
         for rw in candidates.iter() {
             let lhs = rw.lhs_concrete();
             let rhs = rw.rhs_concrete();
-            backend.add_term(lhs.clone(), None).unwrap();
-            backend.add_term(rhs.clone(), None).unwrap();
+            backend.add_term(lhs.clone(), false).unwrap();
+            backend.add_term(rhs.clone(), false).unwrap();
         }
 
         // 3. Iteratively add rewrites and remove redundant ones.
@@ -234,8 +234,8 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
         for imp in candidates.iter() {
             let pre = imp.lhs_concrete();
             let post = imp.rhs_concrete();
-            backend.add_predicate(pre.clone(), None).unwrap();
-            backend.add_predicate(post.clone(), None).unwrap();
+            backend.add_predicate(pre.clone(), false).unwrap();
+            backend.add_predicate(post.clone(), false).unwrap();
         }
 
         // 2. Iteratively add implications and remove redundant ones.
@@ -375,14 +375,14 @@ impl<'a, L: Language> Minimization<L> for ConditionalRewriteMinimize<'a, L> {
                 backend
                     .add_predicate(
                         PredicateTerm::from_term(cond.term.concretize().clone().unwrap()),
-                        None,
+                        false,
                     )
                     .unwrap();
             }
             let lhs = rw.lhs_concrete();
             let rhs = rw.rhs_concrete();
-            backend.add_term(lhs.clone(), None).unwrap();
-            backend.add_term(rhs.clone(), None).unwrap();
+            backend.add_term(lhs.clone(), false).unwrap();
+            backend.add_term(rhs.clone(), false).unwrap();
         }
 
         let mut chosen: Vec<Rewrite<L>> = self.existing_rws.clone();

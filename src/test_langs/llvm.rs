@@ -323,15 +323,22 @@ mod tests {
         // Because we didn't first discover rewrites over the condition language.
         // See `find_implications_better_schedule` test for a better schedule.
 
+        // With no implications, this should be 8.
+        // Discovered implication: (Lt ?a ?b ) --> (Le ?a ?b )
+        // Discovered implication: (Lt ?a ?b ) --> (Ge ?b ?a )
+        // Discovered implication: (Gt ?a ?b ) --> (Le ?b ?a )
+        // Discovered implication: (Gt ?a ?b ) --> (Ge ?a ?b )
+        // Discovered implication: (Lt ?a ?b ) --> (Neq ?b ?a )
+        // Discovered implication: (Lt ?a ?b ) --> (Neq ?a ?b )
+        // Discovered implication: (Gt ?a ?b ) --> (Neq ?a ?b )
+        // Discovered implication: (Gt ?a ?b ) --> (Neq ?b ?a )
         assert_eq!(implications.len(), 8);
     }
 
     #[test]
     fn find_implications_better_schedule() {
-        let mut bubbler: Bubbler<LLVMLang> = Bubbler::new(BubblerConfig::new(
-            vec!["x".into(), "y".into()],
-            vec![1, 2, 3],
-        ));
+        let mut bubbler: Bubbler<LLVMLang> =
+            Bubbler::new(BubblerConfig::new(vec!["x".into(), "y".into()], vec![]));
 
         let predicate_workload = Workload::new(&["(OP2 VAR VAR)"])
             .plug("OP2", &Workload::new(&["Gt", "Lt", "Ge", "Le", "Neq"]))

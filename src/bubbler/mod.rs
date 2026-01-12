@@ -8,10 +8,9 @@ use ruler::enumo::Workload;
 use schedule::{Enumeration, Identification, Minimization};
 
 use crate::colors::implication::Implication;
-use crate::language::constant::BubbleConstant;
 use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
-use crate::language::{CVec, Environment, Language, term::Term};
+use crate::language::{Environment, Language, term::Term};
 
 mod backend;
 mod enumeration;
@@ -73,13 +72,10 @@ impl<L: Language> Bubbler<L> {
         let mut backend = self.new_backend();
 
         // 1. Enumerate predicates in the workload.
-        let enumerator = BasicEnumerate::new(
-            enumeration::EnumerationConfig {
-                mode: enumeration::EnumerationMode::Predicates,
-                evaluate: true,
-            },
-            self.environment.clone(),
-        );
+        let enumerator = BasicEnumerate::new(enumeration::EnumerationConfig {
+            mode: enumeration::EnumerationMode::Predicates,
+            evaluate: true,
+        });
 
         enumerator
             .enumerate_bubbler(&mut backend, wkld.clone())
@@ -125,25 +121,19 @@ impl<L: Language> Bubbler<L> {
         // 1. Enumerate terms and conditions in the workload.
         let mut backend = self.new_backend();
 
-        let enumerator = BasicEnumerate::new(
-            enumeration::EnumerationConfig {
-                mode: enumeration::EnumerationMode::Terms,
-                evaluate: true,
-            },
-            self.environment.clone(),
-        );
+        let enumerator = BasicEnumerate::new(enumeration::EnumerationConfig {
+            mode: enumeration::EnumerationMode::Terms,
+            evaluate: true,
+        });
 
         enumerator
             .enumerate_bubbler(&mut backend, wkld.clone())
             .unwrap();
 
-        let enumerator = BasicEnumerate::new(
-            enumeration::EnumerationConfig {
-                mode: enumeration::EnumerationMode::Predicates,
-                evaluate: true,
-            },
-            self.environment.clone(),
-        );
+        let enumerator = BasicEnumerate::new(enumeration::EnumerationConfig {
+            mode: enumeration::EnumerationMode::Predicates,
+            evaluate: true,
+        });
 
         enumerator
             .enumerate_bubbler(&mut backend, pred_wkld.clone())
@@ -206,6 +196,7 @@ impl<L: Language> Bubbler<L> {
     /// inferred rules and implications.
     pub fn new_backend(&self) -> EgglogBackend<L> {
         let mut backend = EgglogBackend::<L>::new();
+        backend.set_environment(self.environment.clone());
         for rule in &self.rules {
             backend.register(rule).unwrap();
         }
@@ -276,26 +267,7 @@ impl<L: Language> Bubbler<L> {
             return Err("Predicates must be concrete.".into());
         }
 
-        let pvec = if add_pvec {
-            Some(
-                predicate
-                    .term
-                    .evaluate(&self.environment)
-                    .iter()
-                    .map(|c| match c {
-                        None => false,
-                        Some(c) => {
-                            let bc: BubbleConstant = L::constant_to_bubble(c);
-                            bc.to_bool()
-                        }
-                    })
-                    .collect(),
-            )
-        } else {
-            None
-        };
-
-        backend.add_predicate(predicate.clone(), pvec).unwrap();
+        backend.add_predicate(predicate.clone(), add_pvec).unwrap();
         Ok(())
     }
 
@@ -312,13 +284,7 @@ impl<L: Language> Bubbler<L> {
             return Err("Terms must be concrete.".into());
         }
 
-        let cvec: Option<CVec<L>> = if add_cvec {
-            Some(term.evaluate(&self.environment))
-        } else {
-            None
-        };
-
-        backend.add_term(term.clone(), cvec).unwrap();
+        backend.add_term(term.clone(), add_cvec).unwrap();
         Ok(())
     }
 }

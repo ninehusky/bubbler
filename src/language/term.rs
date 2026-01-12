@@ -300,7 +300,13 @@ impl<L: Language> Term<L> {
             Term::Const(c) => vec![Some(c.clone()); env.values().next().map_or(1, |v| v.len())]
                 .into_iter()
                 .collect::<CVec<L>>(),
-            Term::Var(v) => env.get(v).cloned().unwrap().into_iter().map(Some).collect(),
+            Term::Var(v) => env
+                .get(v)
+                .cloned()
+                .unwrap_or_else(|| panic!("Couldn't find variable {} in environment.", v))
+                .into_iter()
+                .map(Some)
+                .collect(),
             Term::Call(op, children) => {
                 let child_vecs: Vec<_> = children.iter().map(|c| c.evaluate(env)).collect();
                 L::evaluate_op(op, &child_vecs)

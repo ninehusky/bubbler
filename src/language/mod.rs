@@ -32,8 +32,8 @@ pub trait OpTrait: Clone + Debug + PartialEq + Eq {
 }
 
 pub trait Language: Clone + Debug + PartialEq + Eq {
-    type Constant: Clone + Debug + PartialEq + Eq + Hash + FromStr;
-    type Op: Clone + Debug + Display + PartialEq + Eq + OpTrait + Hash + FromStr;
+    type Constant: Clone + Debug + PartialEq + Eq + Hash + FromStr + Send + Sync;
+    type Op: Clone + Debug + Display + PartialEq + Eq + OpTrait + Hash + FromStr + Send + Sync;
 
     fn name() -> &'static str;
 
