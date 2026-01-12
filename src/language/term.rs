@@ -303,7 +303,7 @@ impl<L: Language> Term<L> {
             Term::Var(v) => env
                 .get(v)
                 .cloned()
-                .expect(format!("Couldn't find variable {} in environment.", v).as_str())
+                .unwrap_or_else(|| panic!("Couldn't find variable {} in environment.", v))
                 .into_iter()
                 .map(Some)
                 .collect(),

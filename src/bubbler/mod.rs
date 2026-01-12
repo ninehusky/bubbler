@@ -1,18 +1,16 @@
 use backend::EgglogBackend;
-use egglog::SerializeConfig;
 use identification::{
     ConditionalCvecMatch, CvecMatch, IdentificationConfig, IdentificationMode, PvecMatch,
 };
-use minimization::score_fns::implication_score_fns;
 use minimization::BasicImplicationMinimize;
+use minimization::score_fns::implication_score_fns;
 use ruler::enumo::Workload;
 use schedule::{Enumeration, Identification, Minimization};
 
 use crate::colors::implication::Implication;
-use crate::language::constant::BubbleConstant;
 use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
-use crate::language::{term::Term, CVec, Environment, Language};
+use crate::language::{Environment, Language, term::Term};
 
 mod backend;
 mod enumeration;
@@ -74,49 +72,18 @@ impl<L: Language> Bubbler<L> {
         let mut backend = self.new_backend();
 
         // 1. Enumerate predicates in the workload.
-        let enumerator = BasicEnumerate::new(
-            enumeration::EnumerationConfig {
-                mode: enumeration::EnumerationMode::Predicates,
-                evaluate: true,
-            },
-            self.environment.clone(),
-        );
+        let enumerator = BasicEnumerate::new(enumeration::EnumerationConfig {
+            mode: enumeration::EnumerationMode::Predicates,
+            evaluate: true,
+        });
 
         enumerator
             .enumerate_bubbler(&mut backend, wkld.clone())
             .unwrap();
 
-        backend
-            .egraph
-            .parse_and_run_program(None, r#"(check (Ge (Var "x") (Var "y")))"#)
-            .unwrap();
-
-        backend
-            .egraph
-            .parse_and_run_program(None, r#"(check (Le (Var "y") (Var "x")))"#)
-            .unwrap();
-
-        backend
-            .egraph
-            .parse_and_run_program(
-                None,
-                r#"(rewrite (Le ?a ?b) (Ge ?b ?a) :ruleset term-rewrites)"#,
-            )
-            .unwrap();
         // 2. Run the existing rules and implications.
         backend.run_rewrites().unwrap();
         backend.run_implications().unwrap();
-
-        // the above two terms should be equivalent now.
-        backend
-            .egraph
-            .parse_and_run_program(
-                None,
-                r#"(check (= (Le (Var "y") (Var "x")) (Ge (Var "x") (Var "y"))))"#,
-            )
-            .unwrap();
-
-        // this fails?
 
         // 3. Identify candidates for implications from the predicates.
         let imp_candidates = PvecMatch::new(IdentificationConfig {
@@ -154,25 +121,19 @@ impl<L: Language> Bubbler<L> {
         // 1. Enumerate terms and conditions in the workload.
         let mut backend = self.new_backend();
 
-        let enumerator = BasicEnumerate::new(
-            enumeration::EnumerationConfig {
-                mode: enumeration::EnumerationMode::Terms,
-                evaluate: true,
-            },
-            self.environment.clone(),
-        );
+        let enumerator = BasicEnumerate::new(enumeration::EnumerationConfig {
+            mode: enumeration::EnumerationMode::Terms,
+            evaluate: true,
+        });
 
         enumerator
             .enumerate_bubbler(&mut backend, wkld.clone())
             .unwrap();
 
-        let enumerator = BasicEnumerate::new(
-            enumeration::EnumerationConfig {
-                mode: enumeration::EnumerationMode::Predicates,
-                evaluate: true,
-            },
-            self.environment.clone(),
-        );
+        let enumerator = BasicEnumerate::new(enumeration::EnumerationConfig {
+            mode: enumeration::EnumerationMode::Predicates,
+            evaluate: true,
+        });
 
         enumerator
             .enumerate_bubbler(&mut backend, pred_wkld.clone())

@@ -3,13 +3,14 @@
 use std::collections::HashMap;
 
 use egglog::{
+    CommandOutput, EGraph,
     ast::{
         Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
         GenericRunConfig, GenericSchedule, Schema, Variant,
     },
     call, lit,
-    prelude::{add_function, add_relation, add_ruleset, RustSpan, Span},
-    span, var, CommandOutput, EGraph,
+    prelude::{RustSpan, Span, add_function, add_relation, add_ruleset},
+    span, var,
 };
 use enodes::{EClassId, ENodeRegistry};
 use intern::InternStore;
@@ -17,10 +18,10 @@ use intern::InternStore;
 use crate::{
     colors::implication::Implication,
     language::{
+        CVec, Environment, Language, OpTrait, PVec,
         constant::BubbleConstant,
         rewrite::Rewrite,
         term::{PredicateTerm, Term},
-        CVec, Environment, Language, OpTrait, PVec,
     },
 };
 
@@ -1345,16 +1346,18 @@ mod tests {
             )
             .unwrap();
 
-        assert!(!backend
-            .is_conditionally_equal(
-                &PredicateTerm::from_term(Term::Call(
-                    LLVMLangOp::Gt,
-                    vec![Term::Var("a".into()), Term::Const(0.into())],
-                )),
-                &Term::Var("a".into()),
-                &Term::Var("c".into()),
-            )
-            .unwrap());
+        assert!(
+            !backend
+                .is_conditionally_equal(
+                    &PredicateTerm::from_term(Term::Call(
+                        LLVMLangOp::Gt,
+                        vec![Term::Var("a".into()), Term::Const(0.into())],
+                    )),
+                    &Term::Var("a".into()),
+                    &Term::Var("c".into()),
+                )
+                .unwrap()
+        );
     }
 
     #[test]

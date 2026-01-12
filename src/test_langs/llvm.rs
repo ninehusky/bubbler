@@ -4,7 +4,7 @@
 
 use std::{fmt::Display, str::FromStr};
 
-use crate::language::{constant::BubbleConstant, Language, OpTrait};
+use crate::language::{Language, OpTrait, constant::BubbleConstant};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct LLVMLang;
@@ -323,11 +323,16 @@ mod tests {
         // Because we didn't first discover rewrites over the condition language.
         // See `find_implications_better_schedule` test for a better schedule.
 
-        for r in &implications {
-            println!("Discovered implication: {}", r);
-        }
-
-        assert_eq!(implications.len(), 6); // why did this go down to 6?
+        // With no implications, this should be 8.
+        // Discovered implication: (Lt ?a ?b ) --> (Le ?a ?b )
+        // Discovered implication: (Lt ?a ?b ) --> (Ge ?b ?a )
+        // Discovered implication: (Gt ?a ?b ) --> (Le ?b ?a )
+        // Discovered implication: (Gt ?a ?b ) --> (Ge ?a ?b )
+        // Discovered implication: (Lt ?a ?b ) --> (Neq ?b ?a )
+        // Discovered implication: (Lt ?a ?b ) --> (Neq ?a ?b )
+        // Discovered implication: (Gt ?a ?b ) --> (Neq ?a ?b )
+        // Discovered implication: (Gt ?a ?b ) --> (Neq ?b ?a )
+        assert_eq!(implications.len(), 8);
     }
 
     #[test]

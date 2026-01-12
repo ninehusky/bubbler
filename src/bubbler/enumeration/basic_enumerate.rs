@@ -1,8 +1,8 @@
 use crate::{
     bubbler::{backend::EgglogBackend, schedule::Enumeration},
     language::{
+        Language,
         term::{PredicateTerm, Term},
-        Environment, Language,
     },
 };
 
@@ -11,15 +11,13 @@ use super::{EnumerationConfig, EnumerationMode};
 /// Adds all of the terms in the workload to the e-graph.
 pub struct BasicEnumerate<L: Language> {
     pub cfg: EnumerationConfig,
-    pub env: Environment<L>,
     _marker: std::marker::PhantomData<L>,
 }
 
 impl<L: Language> BasicEnumerate<L> {
-    pub fn new(cfg: EnumerationConfig, env: Environment<L>) -> BasicEnumerate<L> {
+    pub fn new(cfg: EnumerationConfig) -> BasicEnumerate<L> {
         Self {
             cfg,
-            env,
             _marker: std::marker::PhantomData::<L>,
         }
     }

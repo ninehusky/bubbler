@@ -1,9 +1,9 @@
 //! This file contains the matching strategies used in Chompy's implementation.
 
 use crate::{
-    bubbler::{backend::EgglogBackend, schedule::Identification, InferredFacts},
+    bubbler::{InferredFacts, backend::EgglogBackend, schedule::Identification},
     colors::implication::Implication,
-    language::{rewrite::Rewrite, CVec, Language, PVec},
+    language::{CVec, Language, PVec, rewrite::Rewrite},
 };
 
 use super::IdentificationConfig;
@@ -162,10 +162,10 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
 mod tests {
     use crate::{
         bubbler::{
+            Bubbler, BubblerConfig,
             enumeration::{BasicEnumerate, EnumerationConfig, EnumerationMode},
             identification::{IdentificationConfig, IdentificationMode},
             schedule::{Enumeration, Identification},
-            Bubbler, BubblerConfig,
         },
         test_langs::llvm::LLVMLang,
     };
@@ -182,8 +182,7 @@ mod tests {
             evaluate: true,
         };
 
-        let enumerate_act =
-            BasicEnumerate::<LLVMLang>::new(enumeration_cfg, bubbler.environment.clone());
+        let enumerate_act = BasicEnumerate::<LLVMLang>::new(enumeration_cfg);
 
         let mut backend = bubbler.new_backend();
 
@@ -227,8 +226,7 @@ mod tests {
 
         let mut backend: EgglogBackend<LLVMLang> = bubbler.new_backend();
 
-        let enumerate_act =
-            BasicEnumerate::<LLVMLang>::new(enumeration_cfg, bubbler.environment.clone());
+        let enumerate_act = BasicEnumerate::<LLVMLang>::new(enumeration_cfg);
 
         enumerate_act
             .enumerate_bubbler(
@@ -340,7 +338,7 @@ impl<L: Language> Identification<L> for ConditionalCvecMatch<L> {
 #[cfg(test)]
 pub mod cond_cvec_match_test {
     use crate::{
-        bubbler::{identification::IdentificationMode, Bubbler, BubblerConfig},
+        bubbler::{Bubbler, BubblerConfig, identification::IdentificationMode},
         language::{PredicateTerm, Term},
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
@@ -425,22 +423,26 @@ pub mod cond_cvec_match_test {
         };
 
         assert_eq!(candidates.len(), 2);
-        assert!(candidates.contains(
-            &Rewrite::new(
-                Some(PredicateTerm::from_term(x_gt_0)),
-                x_div_x.clone(),
-                Term::Const(1),
+        assert!(
+            candidates.contains(
+                &Rewrite::new(
+                    Some(PredicateTerm::from_term(x_gt_0)),
+                    x_div_x.clone(),
+                    Term::Const(1),
+                )
+                .unwrap()
             )
-            .unwrap()
-        ));
+        );
 
-        assert!(candidates.contains(
-            &Rewrite::new(
-                Some(PredicateTerm::from_term(x_neq_0)),
-                x_div_x.clone(),
-                Term::Const(1),
+        assert!(
+            candidates.contains(
+                &Rewrite::new(
+                    Some(PredicateTerm::from_term(x_neq_0)),
+                    x_div_x.clone(),
+                    Term::Const(1),
+                )
+                .unwrap()
             )
-            .unwrap()
-        ));
+        );
     }
 }

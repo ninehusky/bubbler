@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-/// I just made some BULLSHIT!
+// I just made some BULLSHIT!
 
+#[allow(dead_code)]
 pub type EClassId = usize;
 
 pub type ENodeId = usize;
@@ -40,6 +41,7 @@ impl ENodeRegistry {
         id
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.enodes.len()
     }
