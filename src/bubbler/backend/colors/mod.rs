@@ -40,6 +40,7 @@ impl<L: Language> Default for Lattice<L> {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, PartialEq, Eq)]
 pub enum LatticeNode<L: Language> {
     Top,
@@ -47,6 +48,7 @@ pub enum LatticeNode<L: Language> {
     Fact(PredicateTerm<L>),
 }
 
+#[allow(dead_code)]
 impl<L: Language> Lattice<L> {
     fn fact_node(&mut self, cond: PredicateTerm<L>) -> NodeId {
         if let Some(&id) = self.facts.get(&cond) {

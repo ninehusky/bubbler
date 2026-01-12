@@ -1,7 +1,6 @@
 use std::vec;
 
-use bubbler::bubbler::{Bubbler, BubblerConfig, InferredFacts};
-use bubbler::colors::Implication;
+use bubbler::bubbler::{Bubbler, BubblerConfig, Implication, InferredFacts};
 use bubbler::eval::{report::NightlyReport, stats::EvalStats};
 use bubbler::language::{PredicateTerm, Rewrite, Term};
 use bubbler::record;

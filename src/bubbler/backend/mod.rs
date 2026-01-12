@@ -15,16 +15,16 @@ use egglog::{
 use enodes::{EClassId, ENodeRegistry};
 use intern::InternStore;
 
-use crate::{
-    colors::implication::Implication,
-    language::{
-        CVec, Environment, Language, OpTrait, PVec,
-        constant::BubbleConstant,
-        rewrite::Rewrite,
-        term::{PredicateTerm, Term},
-    },
+use crate::language::{
+    CVec, Environment, Language, OpTrait, PVec,
+    constant::BubbleConstant,
+    rewrite::Rewrite,
+    term::{PredicateTerm, Term},
 };
 
+pub use colors::{Condition, Implication};
+
+mod colors;
 mod enodes;
 mod intern;
 

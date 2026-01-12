@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use crate::{
-    colors::Implication,
+    bubbler::Implication,
     language::{Language, Rewrite},
 };
 
