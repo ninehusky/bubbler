@@ -1,8 +1,7 @@
 //! This file contains the matching strategies used in Chompy's implementation.
 
 use crate::{
-    bubbler::{InferredFacts, backend::EgglogBackend, schedule::Identification},
-    colors::implication::Implication,
+    bubbler::{Implication, InferredFacts, backend::EgglogBackend, schedule::Identification},
     language::{CVec, Language, PVec, rewrite::Rewrite},
 };
 

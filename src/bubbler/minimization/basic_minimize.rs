@@ -1,6 +1,5 @@
 use crate::{
-    bubbler::{InferredFacts, backend::EgglogBackend, schedule::Minimization},
-    colors::implication::Implication,
+    bubbler::{Implication, InferredFacts, backend::EgglogBackend, schedule::Minimization},
     language::{Language, PredicateTerm, rewrite::Rewrite},
 };
 

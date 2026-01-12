@@ -1,5 +1,4 @@
 pub mod bubbler;
-pub mod colors;
 pub mod language;
 
 #[doc(hidden)]

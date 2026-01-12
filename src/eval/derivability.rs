@@ -1,6 +1,5 @@
 use crate::{
-    bubbler::{Bubbler, BubblerConfig},
-    colors::Implication,
+    bubbler::{Bubbler, BubblerConfig, Implication},
     language::{Language, Rewrite},
 };
 

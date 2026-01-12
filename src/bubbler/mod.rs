@@ -7,7 +7,6 @@ use minimization::score_fns::implication_score_fns;
 use ruler::enumo::Workload;
 use schedule::{Enumeration, Identification, Minimization};
 
-use crate::colors::implication::Implication;
 use crate::language::rewrite::Rewrite;
 use crate::language::term::PredicateTerm;
 use crate::language::{Environment, Language, term::Term};
@@ -18,6 +17,7 @@ mod identification;
 mod minimization;
 mod schedule;
 
+pub use backend::{Condition, Implication};
 use enumeration::BasicEnumerate;
 
 type RewriteFacts<L> = InferredFacts<L>;

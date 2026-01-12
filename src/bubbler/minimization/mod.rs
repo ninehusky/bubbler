@@ -1,6 +1,6 @@
 use crate::{
-    colors::Implication,
-    language::{Language, Rewrite},
+    bubbler::{Condition, Implication},
+    language::{Language, Rewrite, Term},
 };
 
 mod basic_minimize;
@@ -15,7 +15,6 @@ pub type RewriteScoreFn<'a, L> = dyn Fn(&Rewrite<L>) -> i64 + Send + Sync + 'a;
 pub type ImplicationScoreFn<'a, L> = dyn Fn(&Implication<L>) -> i64 + Send + Sync + 'a;
 
 pub mod score_fns {
-    use crate::{colors::Implication, language::Term};
 
     use super::*;
 
@@ -36,8 +35,8 @@ pub mod score_fns {
             }
             Box::new(|imp: &Implication<L>| {
                 let lhs_term = match &imp.from {
-                    crate::colors::Condition::Predicate(p) => &p.term,
-                    crate::colors::Condition::Term(t) => t,
+                    Condition::Predicate(p) => &p.term,
+                    Condition::Term(t) => t,
                 };
                 let lhs_cost = cost(lhs_term);
                 let rhs_cost = cost(&imp.to.term);
