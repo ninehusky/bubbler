@@ -3,14 +3,13 @@
 use std::collections::HashMap;
 
 use egglog::{
-    CommandOutput, EGraph,
     ast::{
         Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
         GenericRunConfig, GenericSchedule, Schema, Variant,
     },
     call, lit,
-    prelude::{RustSpan, Span, add_function, add_relation, add_ruleset},
-    span, var,
+    prelude::{add_function, add_relation, add_ruleset, RustSpan, Span},
+    span, var, BaseValue, CommandOutput, EGraph,
 };
 use enodes::{EClassId, ENodeRegistry};
 use intern::InternStore;
@@ -18,10 +17,10 @@ use intern::InternStore;
 use crate::{
     colors::implication::Implication,
     language::{
-        CVec, Environment, Language, OpTrait, PVec,
         constant::BubbleConstant,
         rewrite::Rewrite,
         term::{PredicateTerm, Term},
+        CVec, Environment, Language, OpTrait, PVec,
     },
 };
 
@@ -71,8 +70,6 @@ pub struct EgglogBackend<L: Language> {
     enode_registry: ENodeRegistry,
     cvec_store: CVecStore<L>,
     pvec_store: PVecStore,
-
-    _marker: std::marker::PhantomData<L>,
 }
 
 impl<L: Language> Default for EgglogBackend<L> {
@@ -91,7 +88,6 @@ impl<L: Language> EgglogBackend<L> {
             enode_registry: ENodeRegistry::new(),
             cvec_store: CVecStore::<L>::new(),
             pvec_store: PVecStore::new(),
-            _marker: std::marker::PhantomData,
         }
     }
 
@@ -105,6 +101,7 @@ impl<L: Language> EgglogBackend<L> {
     #[allow(clippy::vec_init_then_push)]
     pub fn setup_egraph() -> EGraph {
         let mut egraph = EGraph::default();
+
         // 1. Register the base language's syntax as a datatype.
         let mut variants: Vec<_> = L::ops()
             .iter()
@@ -582,39 +579,39 @@ impl<L: Language> EgglogBackend<L> {
         Ok(())
     }
 
-    /// Gets the eclass ID for the given term.
-    // Equivalent to `(extract (eclass-id term))` in egglog.
-    pub fn get_eclass_id(&mut self, term: &Term<L>) -> Result<EClassId, String> {
-        let result = self
-            .egraph
-            .run_program(vec![GenericCommand::Extract(
-                span!(),
-                call!(
-                    bubbler_defns::ECLASS_ID_FUNCTION.to_string(),
-                    vec![term.clone().into()]
-                ),
-                lit!(1),
-            )])
-            .map_err(|e| format!("Failed to get eclass ID: {:?}", e))?;
+    // /// Gets the eclass ID for the given term.
+    // // Equivalent to `(extract (eclass-id term))` in egglog.
+    // pub fn get_eclass_id(&mut self, term: &Term<L>) -> Result<EClassId, String> {
+    //     let result = self
+    //         .egraph
+    //         .run_program(vec![GenericCommand::Extract(
+    //             span!(),
+    //             call!(
+    //                 bubbler_defns::ECLASS_ID_FUNCTION.to_string(),
+    //                 vec![term.clone().into()]
+    //             ),
+    //             lit!(1),
+    //         )])
+    //         .map_err(|e| format!("Failed to get eclass ID: {:?}", e))?;
 
-        let CommandOutput::ExtractVariants(_, terms) = &result[0] else {
-            return Err("Expected Action output.".to_string());
-        };
+    //     let CommandOutput::ExtractVariants(_, terms) = &result[0] else {
+    //         return Err("Expected Action output.".to_string());
+    //     };
 
-        assert_eq!(terms.len(), 1, "Expected single output term for eclass ID.");
+    //     assert_eq!(terms.len(), 1, "Expected single output term for eclass ID.");
 
-        let term = &terms[0];
+    //     let term = &terms[0];
 
-        let egglog::Term::Lit(eclass_id) = term else {
-            return Err("Expected literal output for eclass ID.".to_string());
-        };
+    //     let egglog::Term::Lit(eclass_id) = term else {
+    //         return Err("Expected literal output for eclass ID.".to_string());
+    //     };
 
-        let egglog::ast::Literal::Int(eclass_id) = eclass_id else {
-            return Err("Expected integer literal for eclass ID.".to_string());
-        };
+    //     let egglog::ast::Literal::Int(eclass_id) = eclass_id else {
+    //         return Err("Expected integer literal for eclass ID.".to_string());
+    //     };
 
-        Ok(*eclass_id as usize)
-    }
+    //     Ok()
+    // }
 
     pub fn add_term(&mut self, term: Term<L>, with_cvec: bool) -> Result<EClassId, String> {
         let mut commands = vec![];
@@ -668,7 +665,31 @@ impl<L: Language> EgglogBackend<L> {
 
         self.next_eclass += 1;
 
-        Ok(eclass_id)
+        self.get_eclass_id(&term)
+    }
+
+    pub fn get_eclass_id(&mut self, term: &Term<L>) -> Result<EClassId, String> {
+        let t_expr: Expr = term.clone().into();
+        let outputs = self
+            .egraph
+            .parse_and_run_program(None, format!("(extract {})", t_expr).as_str())
+            .map_err(|e| format!("Failed to get class ID: {:?}", e))?;
+
+        // Maybe there's a way to get the canonical value out of the egraph without
+        // extracting, but I don't think I know it offhand.
+        let CommandOutput::ExtractBest(termdag, _cost, term) = outputs[0].clone() else {
+            return Err("Expected ExtractBest output.".to_string());
+        };
+
+        let expr = termdag.term_to_expr(&term, span!());
+        let (sort, value) = self
+            .egraph
+            .eval_expr(&expr)
+            .map_err(|e| format!("Failed to evaluate expr: {:?}", e))?;
+
+        let id = self.egraph.get_canonical_value(value, &sort);
+        println!("id: {:?}", id);
+        Ok(id)
     }
 
     pub fn add_predicate(
@@ -1346,18 +1367,16 @@ mod tests {
             )
             .unwrap();
 
-        assert!(
-            !backend
-                .is_conditionally_equal(
-                    &PredicateTerm::from_term(Term::Call(
-                        LLVMLangOp::Gt,
-                        vec![Term::Var("a".into()), Term::Const(0.into())],
-                    )),
-                    &Term::Var("a".into()),
-                    &Term::Var("c".into()),
-                )
-                .unwrap()
-        );
+        assert!(!backend
+            .is_conditionally_equal(
+                &PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Gt,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                )),
+                &Term::Var("a".into()),
+                &Term::Var("c".into()),
+            )
+            .unwrap());
     }
 
     #[test]

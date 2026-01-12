@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
+use egglog::Value;
+
 // I just made some BULLSHIT!
 
 #[allow(dead_code)]
-pub type EClassId = usize;
-
+pub type EClassId = Value;
 pub type ENodeId = usize;
 
 /// Calling this an ENode is a bit of a misnomer.
