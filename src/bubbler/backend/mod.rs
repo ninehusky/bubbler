@@ -3,22 +3,23 @@
 use std::collections::HashMap;
 
 use egglog::{
+    ArcSort, CommandOutput, EGraph,
     ast::{
         Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
         GenericRunConfig, GenericSchedule, Variant,
     },
     call, lit,
-    prelude::{add_relation, add_ruleset, RustSpan, Span},
-    span, var, CommandOutput, EGraph,
+    prelude::{RustSpan, Span, add_relation, add_ruleset},
+    span, var,
 };
 use enodes::{EClassId, ENodeRegistry};
 use intern::InternStore;
 
 use crate::language::{
+    CVec, Environment, Language, OpTrait, PVec,
     constant::BubbleConstant,
     rewrite::Rewrite,
     term::{PredicateTerm, Term},
-    CVec, Environment, Language, OpTrait, PVec,
 };
 
 pub use colors::{Condition, Implication};
@@ -27,8 +28,6 @@ mod colors;
 mod enodes;
 mod intern;
 mod union_find;
-
-use union_find::UnionFind;
 
 // A bunch of variables for storing names of relations/datatypes used in egglog programs.
 // In accordance with the style of other egglog code, datatypes are PascalCased and
@@ -87,6 +86,12 @@ impl<L: Language> EgglogBackend<L> {
             cvec_store: CVecStore::<L>::new(),
             pvec_store: PVecStore::new(),
         }
+    }
+
+    pub fn sort(&self) -> &ArcSort {
+        self.egraph
+            .get_sort_by_name(L::name())
+            .expect("EGraph doesn't know about the base language sort.")
     }
 
     pub fn set_environment(&mut self, environment: Environment<L>) {
@@ -1309,16 +1314,18 @@ mod tests {
             )
             .unwrap();
 
-        assert!(!backend
-            .is_conditionally_equal(
-                &PredicateTerm::from_term(Term::Call(
-                    LLVMLangOp::Gt,
-                    vec![Term::Var("a".into()), Term::Const(0.into())],
-                )),
-                &Term::Var("a".into()),
-                &Term::Var("c".into()),
-            )
-            .unwrap());
+        assert!(
+            !backend
+                .is_conditionally_equal(
+                    &PredicateTerm::from_term(Term::Call(
+                        LLVMLangOp::Gt,
+                        vec![Term::Var("a".into()), Term::Const(0.into())],
+                    )),
+                    &Term::Var("a".into()),
+                    &Term::Var("c".into()),
+                )
+                .unwrap()
+        );
     }
 
     #[test]

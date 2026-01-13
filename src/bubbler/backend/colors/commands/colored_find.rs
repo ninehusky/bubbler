@@ -3,7 +3,8 @@ use std::{fmt::Display, sync::Arc};
 use egglog::{CommandOutput, UserDefinedCommand, UserDefinedCommandOutput};
 
 use crate::{
-    bubbler::backend::{colors::Lattice, enodes::EClassId, EgglogBackend},
+    bubbler::backend::union_find::UnionFindLike,
+    bubbler::backend::{EgglogBackend, colors::Lattice, enodes::EClassId},
     language::{Language, PredicateTerm},
 };
 
@@ -13,7 +14,7 @@ use crate::{
 /// This almost always means finding the representative term for
 /// a colored e-class in the lattice structure.
 pub struct ColoredFind<'a, L: Language> {
-    lattice: &'a Lattice<L>,
+    lattice: &'a Lattice<'a, L>,
 }
 
 impl<'a, L: Language> UserDefinedCommand for ColoredFind<'a, L> {
@@ -26,12 +27,16 @@ impl<'a, L: Language> UserDefinedCommand for ColoredFind<'a, L> {
         let color: PredicateTerm<L> = args[0].clone().into();
         let black_id = EgglogBackend::get_eclass_id(egraph, &color.term).unwrap();
 
-        let Some(color) = self.lattice.facts.get(&color) else {
-            return Err(egglog::Error::BackendError(format!(
-                "Color {:?} not found in lattice",
-                args[0]
-            )));
-        };
+        println!("debug: we're going to just assume the color is black.");
+
+        let color = &self.lattice.top;
+
+        // let Some(color) = self.lattice.facts.get(&color) else {
+        //     return Err(egglog::Error::BackendError(format!(
+        //         "Color {:?} not found in lattice",
+        //         args[0]
+        //     )));
+        // };
 
         let res = self.lattice.ufs.get(color).ok_or_else(|| {
             egglog::Error::BackendError(format!(
@@ -42,7 +47,7 @@ impl<'a, L: Language> UserDefinedCommand for ColoredFind<'a, L> {
 
         Ok(Some(CommandOutput::UserDefined(Arc::new(
             ColoredFindOutput {
-                value: res.find(black_id),
+                value: EClassId(res.peek(black_id.0)),
             },
         ))))
     }
@@ -58,3 +63,6 @@ impl Display for ColoredFindOutput {
         write!(f, "ColoredFindOutput({:?})", self.value)
     }
 }
+
+#[cfg(test)]
+pub mod tests {}

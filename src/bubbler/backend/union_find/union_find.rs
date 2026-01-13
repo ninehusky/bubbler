@@ -1,14 +1,17 @@
 /// Andrew's implementation of union-find.
 /// I haven't needed to do this since undergrad.
 use std::collections::HashMap;
-use std::hash::Hash;
 
-pub struct UnionFind<K> {
-    parent: HashMap<K, K>,
-    rank: HashMap<K, u32>,
+use super::UnionFindLike;
+
+use egglog::Value;
+
+pub struct UnionFind {
+    parent: HashMap<Value, Value>,
+    rank: HashMap<Value, u32>,
 }
 
-impl<K: Eq + Hash + Clone> Default for UnionFind<K> {
+impl Default for UnionFind {
     fn default() -> Self {
         Self {
             parent: HashMap::new(),
@@ -17,12 +20,16 @@ impl<K: Eq + Hash + Clone> Default for UnionFind<K> {
     }
 }
 
-impl<K: Eq + Hash + Clone> UnionFind<K> {
+impl UnionFind {
     pub fn new() -> Self {
         Self::default()
     }
+}
 
-    pub fn find(&self, x: K) -> K {
+impl UnionFindLike for UnionFind {
+    /// Find the representative of `x` without path compression.
+    /// I'm calling this `peek` because usually you want `find`.
+    fn peek(&self, x: Value) -> Value {
         let mut current = x.clone();
         while let Some(p) = self.parent.get(&current) {
             current = p.clone();
@@ -32,7 +39,7 @@ impl<K: Eq + Hash + Clone> UnionFind<K> {
 
     /// Find the representative of `x`.
     /// If `x` is not present, it is its own representative.
-    pub fn find_or_add(&mut self, x: K) -> K {
+    fn find(&mut self, x: Value) -> Value {
         if let Some(p) = self.parent.get(&x).cloned() {
             let root = self.find(p);
             self.parent.insert(x.clone(), root.clone()); // path compression
@@ -43,7 +50,7 @@ impl<K: Eq + Hash + Clone> UnionFind<K> {
     }
 
     /// Union the sets containing `a` and `b`.
-    pub fn union(&mut self, a: K, b: K) {
+    fn union(&mut self, a: Value, b: Value) {
         let ra = self.find(a.clone());
         let rb = self.find(b.clone());
 
@@ -65,7 +72,7 @@ impl<K: Eq + Hash + Clone> UnionFind<K> {
     }
 
     /// Returns true if this UF has *any* information about `x`.
-    pub fn contains(&self, x: &K) -> bool {
+    fn contains(&self, x: &Value) -> bool {
         self.parent.contains_key(x) || self.rank.contains_key(x)
     }
 }

@@ -10,14 +10,15 @@ mod commands;
 mod graph;
 pub mod implication;
 
+use crate::{
+    bubbler::backend::union_find::{FakeUnionFind, UnionFind},
+    language::{Language, term::PredicateTerm},
+};
+use graph::{Graph, NodeId};
 pub use implication::{Condition, Implication};
-
 use std::collections::HashMap;
 
-use crate::language::{term::PredicateTerm, Language};
-use graph::{Graph, NodeId};
-
-use super::{enodes::EClassId, union_find::UnionFind};
+use super::{enodes::EClassId, union_find::UnionFindLike};
 
 /// A colored DAG structure for managing conditional equivalences.
 /// The nodes in the graph are conditions (colors), and the edges are
@@ -29,18 +30,12 @@ use super::{enodes::EClassId, union_find::UnionFind};
 /// the north-most node representing the condition `bottom` (false; an error has occurred),
 /// and the south-most node representing the condition `top` (true; no assumptions).
 /// It's confusing, I know.
-pub struct Lattice<L: Language> {
+pub struct Lattice<'a, L: Language> {
     graph: Graph<LatticeNode<L>>,
     top: NodeId,
     bottom: NodeId,
     facts: HashMap<PredicateTerm<L>, NodeId>,
-    ufs: HashMap<NodeId, UnionFind<EClassId>>,
-}
-
-impl<L: Language> Default for Lattice<L> {
-    fn default() -> Self {
-        Self::new()
-    }
+    ufs: HashMap<NodeId, Box<dyn UnionFindLike + 'a>>,
 }
 
 #[allow(dead_code)]
@@ -52,10 +47,14 @@ pub enum LatticeNode<L: Language> {
 }
 
 #[allow(dead_code)]
-impl<L: Language> Lattice<L> {
+impl<'a, L: Language> Lattice<'a, L> {
     fn assert_invariants(&self) -> bool {
-        assert_eq!(self.graph.size(), self.ufs.len() + 2);
-        assert_eq!(self.facts.len(), self.ufs.len());
+        // The graph size should be exactly the number of UFs plus 1 (bottom).
+        assert_eq!(self.graph.size(), self.ufs.len() + 1);
+
+        // There should be exactly one more UF than there are facts,
+        // because of the top element.
+        assert_eq!(self.facts.len() + 1, self.ufs.len());
         true
     }
 
@@ -65,7 +64,7 @@ impl<L: Language> Lattice<L> {
         } else {
             let id = self.graph.add_node(LatticeNode::Fact(cond.clone()));
             self.facts.insert(cond, id);
-            self.ufs.insert(id, UnionFind::new());
+            self.ufs.insert(id, Box::new(UnionFind::new()));
             id
         }
     }
@@ -85,13 +84,17 @@ impl<L: Language> Lattice<L> {
     }
 
     /// Create a new lattice with just the top and bottom elements.
-    pub fn new() -> Self {
+    pub fn new(egraph: &'a egglog::EGraph, sort: &'a egglog::ArcSort) -> Self {
         let mut graph = Graph::new();
         let facts = HashMap::new();
-        let ufs = HashMap::new();
+        let mut ufs = HashMap::new();
         let bottom = graph.add_node(LatticeNode::Bottom);
         let top = graph.add_node(LatticeNode::Top);
         graph.add_edge(top, bottom); // false -> true, so edge from top to bottom
+        ufs.insert(
+            top,
+            Box::new(FakeUnionFind::new(egraph, sort)) as Box<dyn UnionFindLike + 'a>,
+        );
         Lattice {
             graph,
             top,
@@ -105,6 +108,7 @@ impl<L: Language> Lattice<L> {
 #[cfg(test)]
 pub mod tests {
     use crate::{
+        bubbler::backend::EgglogBackend,
         language::Term,
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
@@ -113,13 +117,15 @@ pub mod tests {
 
     #[test]
     fn empty_lattice() {
-        let lattice: Lattice<LLVMLang> = Lattice::new();
+        let backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+        let lattice: Lattice<LLVMLang> = Lattice::new(&backend.egraph, backend.sort());
         assert_eq!(lattice.graph.size(), 2);
     }
 
     #[test]
     fn add_implication_ok() {
-        let mut lattice: Lattice<LLVMLang> = Lattice::new();
+        let backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+        let mut lattice: Lattice<LLVMLang> = Lattice::new(&backend.egraph, backend.sort());
         let imp = Implication::new(
             Condition::Predicate(PredicateTerm::from_term(Term::Call(
                 LLVMLangOp::Lt,
