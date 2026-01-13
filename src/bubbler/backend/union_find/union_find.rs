@@ -2,6 +2,8 @@
 /// I haven't needed to do this since undergrad.
 use std::collections::HashMap;
 
+use crate::bubbler::backend::union_find::UFContext;
+
 use super::UnionFindLike;
 
 use egglog::Value;
@@ -29,7 +31,11 @@ impl UnionFind {
 impl UnionFindLike for UnionFind {
     /// Find the representative of `x` without path compression.
     /// I'm calling this `peek` because usually you want `find`.
-    fn peek(&self, x: Value) -> Value {
+    fn peek(&self, ctx: UFContext<'_>, x: Value) -> Value {
+        assert!(
+            matches!(ctx, UFContext::None),
+            "peek with context is not supported"
+        );
         let mut current = x.clone();
         while let Some(p) = self.parent.get(&current) {
             current = p.clone();
@@ -39,9 +45,13 @@ impl UnionFindLike for UnionFind {
 
     /// Find the representative of `x`.
     /// If `x` is not present, it is its own representative.
-    fn find(&mut self, x: Value) -> Value {
+    fn find(&mut self, ctx: UFContext<'_>, x: Value) -> Value {
+        assert!(
+            matches!(ctx, UFContext::None),
+            "find with context is not supported"
+        );
         if let Some(p) = self.parent.get(&x).cloned() {
-            let root = self.find(p);
+            let root = self.find(ctx, p);
             self.parent.insert(x.clone(), root.clone()); // path compression
             root
         } else {
@@ -50,9 +60,13 @@ impl UnionFindLike for UnionFind {
     }
 
     /// Union the sets containing `a` and `b`.
-    fn union(&mut self, a: Value, b: Value) {
-        let ra = self.find(a.clone());
-        let rb = self.find(b.clone());
+    fn union(&mut self, ctx: UFContext<'_>, a: Value, b: Value) {
+        assert!(
+            matches!(ctx, UFContext::None),
+            "find with context is not supported"
+        );
+        let ra = self.find(ctx.clone(), a.clone());
+        let rb = self.find(ctx, b.clone());
 
         if ra == rb {
             return;
@@ -72,7 +86,11 @@ impl UnionFindLike for UnionFind {
     }
 
     /// Returns true if this UF has *any* information about `x`.
-    fn contains(&self, x: &Value) -> bool {
+    fn contains(&self, ctx: UFContext<'_>, x: &Value) -> bool {
+        assert!(
+            matches!(ctx, UFContext::None),
+            "contains with context is not supported"
+        );
         self.parent.contains_key(x) || self.rank.contains_key(x)
     }
 }

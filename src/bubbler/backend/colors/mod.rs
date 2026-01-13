@@ -7,6 +7,7 @@
 //! Maybe there are more later. Meh!
 
 mod commands;
+mod context;
 mod graph;
 pub mod implication;
 
@@ -30,12 +31,12 @@ use super::{enodes::EClassId, union_find::UnionFindLike};
 /// the north-most node representing the condition `bottom` (false; an error has occurred),
 /// and the south-most node representing the condition `top` (true; no assumptions).
 /// It's confusing, I know.
-pub struct Lattice<L: Language> {
+pub struct Lattice<'a, L: Language> {
     graph: Graph<LatticeNode<L>>,
     top: NodeId,
     bottom: NodeId,
     facts: HashMap<PredicateTerm<L>, NodeId>,
-    ufs: HashMap<NodeId, Box<dyn UnionFindLike + 'static>>,
+    ufs: HashMap<NodeId, Box<dyn UnionFindLike + 'a>>,
 }
 
 #[allow(dead_code)]
@@ -47,7 +48,7 @@ pub enum LatticeNode<L: Language> {
 }
 
 #[allow(dead_code)]
-impl<L: Language> Lattice<L> {
+impl<'a, L: Language> Lattice<'a, L> {
     fn assert_invariants(&self) -> bool {
         // The graph size should be exactly the number of UFs plus 1 (bottom).
         assert_eq!(self.graph.size(), self.ufs.len() + 1);
@@ -69,6 +70,10 @@ impl<L: Language> Lattice<L> {
         }
     }
 
+    pub fn top(&self) -> NodeId {
+        self.top
+    }
+
     pub fn size(&self) -> usize {
         self.graph.size()
     }
@@ -84,7 +89,7 @@ impl<L: Language> Lattice<L> {
     }
 
     /// Create a new lattice with just the top and bottom elements.
-    pub fn new(egraph: &egglog::EGraph, sort: &egglog::ArcSort) -> Self {
+    pub fn new() -> Self {
         let mut graph = Graph::new();
         let facts = HashMap::new();
         let mut ufs = HashMap::new();
@@ -93,7 +98,7 @@ impl<L: Language> Lattice<L> {
         graph.add_edge(top, bottom); // false -> true, so edge from top to bottom
         ufs.insert(
             top,
-            Box::new(FakeUnionFind::new(egraph, sort)) as Box<dyn UnionFindLike>,
+            Box::new(FakeUnionFind::new()) as Box<dyn UnionFindLike>,
         );
         Lattice {
             graph,
@@ -118,14 +123,14 @@ pub mod tests {
     #[test]
     fn empty_lattice() {
         let backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
-        let lattice: Lattice<LLVMLang> = Lattice::new(&backend.egraph, backend.sort());
+        let lattice: Lattice<LLVMLang> = Lattice::new();
         assert_eq!(lattice.graph.size(), 2);
     }
 
     #[test]
     fn add_implication_ok() {
         let backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
-        let mut lattice: Lattice<LLVMLang> = Lattice::new(&backend.egraph, backend.sort());
+        let mut lattice: Lattice<LLVMLang> = Lattice::new();
         let imp = Implication::new(
             Condition::Predicate(PredicateTerm::from_term(Term::Call(
                 LLVMLangOp::Lt,
