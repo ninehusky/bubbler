@@ -73,12 +73,13 @@ pub mod tests {
         span,
     };
 
+    use super::ColoredFind;
+
     use crate::{
         bubbler::backend::{
             EgglogBackend,
             colors::{
                 Lattice,
-                commands::ColoredFind,
                 context::{clear_lattice, set_lattice},
             },
         },

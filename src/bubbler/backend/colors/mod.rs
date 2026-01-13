@@ -114,7 +114,6 @@ impl<'a, L: Language> Lattice<'a, L> {
 #[cfg(test)]
 pub mod tests {
     use crate::{
-        bubbler::backend::EgglogBackend,
         language::Term,
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
@@ -123,14 +122,12 @@ pub mod tests {
 
     #[test]
     fn empty_lattice() {
-        let backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         let lattice: Lattice<LLVMLang> = Lattice::new();
         assert_eq!(lattice.graph.size(), 2);
     }
 
     #[test]
     fn add_implication_ok() {
-        let backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         let mut lattice: Lattice<LLVMLang> = Lattice::new();
         let imp = Implication::new(
             Condition::Predicate(PredicateTerm::from_term(Term::Call(
