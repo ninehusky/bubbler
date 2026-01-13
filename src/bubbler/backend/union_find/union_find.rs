@@ -80,7 +80,7 @@ impl UnionFindLike for UnionFind {
         } else if rank_a > rank_b {
             self.parent.insert(rb, ra);
         } else {
-            self.parent.insert(rb, ra.clone());
+            self.parent.insert(rb, ra);
             self.rank.insert(ra, rank_a + 1);
         }
     }

@@ -69,14 +69,21 @@ impl Display for ColoredFindOutput {
 pub mod tests {
     use std::sync::Arc;
 
-    use egglog::UserDefinedCommand;
+    use egglog::{
+        prelude::{RustSpan, Span},
+        span,
+    };
 
     use crate::{
         bubbler::backend::{
             EgglogBackend,
-            colors::{Lattice, commands::ColoredFind, context::set_lattice},
+            colors::{
+                Lattice,
+                commands::ColoredFind,
+                context::{clear_lattice, set_lattice},
+            },
         },
-        language::Term,
+        language::{Language, Term},
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
 
@@ -87,10 +94,13 @@ pub mod tests {
 
         set_lattice(&lattice);
 
-        backend.egraph.add_command(
-            "colored-find".to_string(),
-            Arc::new(ColoredFind::<LLVMLang>::default()),
-        );
+        backend
+            .egraph
+            .add_command(
+                "colored-find".to_string(),
+                Arc::new(ColoredFind::<LLVMLang>::default()),
+            )
+            .unwrap();
 
         let term: Term<LLVMLang> = Term::Call(
             LLVMLangOp::Add,
@@ -105,6 +115,27 @@ pub mod tests {
             r#"(colored-find (BaseTerm (Var "true")) (Add (Var "x") (Var "y")))"#,
         );
 
+        let msgs = backend
+            .egraph
+            .parse_and_run_program(None, r#"(extract (Add (Var "x") (Var "y")))"#)
+            .unwrap();
+
+        assert_eq!(msgs.len(), 1);
+
+        let val = match &msgs[0] {
+            egglog::CommandOutput::ExtractBest(termdag, _, term) => {
+                let expr = termdag.term_to_expr(&term, span!());
+                backend.egraph.eval_expr(&expr).unwrap().1
+            }
+            _ => panic!("Expected extracted values"),
+        };
+
+        let sort = backend.egraph.get_sort_by_name(LLVMLang::name()).unwrap();
+        let id = backend.egraph.get_canonical_value(val, sort);
+
         assert!(result.is_ok(), "colored-find command failed: {:?}", result);
+        assert_eq!(id, val);
+
+        clear_lattice();
     }
 }
