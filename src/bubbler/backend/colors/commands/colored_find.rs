@@ -1,13 +1,10 @@
 use std::{fmt::Display, sync::Arc};
 
-use egglog::{CommandOutput, UserDefinedCommand, UserDefinedCommandOutput};
+use egglog::{CommandOutput, UserDefinedCommand};
 
 use crate::{
     bubbler::backend::{
-        EgglogBackend,
-        colors::{Lattice, context::with_lattice},
-        enodes::EClassId,
-        union_find::{UFContext, UnionFindLike},
+        EgglogBackend, colors::context::with_lattice, enodes::EClassId, uf::UFContext,
     },
     language::{Language, PredicateTerm},
 };
@@ -17,6 +14,7 @@ use crate::{
 /// in a given color `c`.
 /// This almost always means finding the representative term for
 /// a colored e-class in the lattice structure.
+#[allow(dead_code)]
 pub struct ColoredFind<L: Language>(std::marker::PhantomData<fn() -> L>);
 
 impl<L: Language> Default for ColoredFind<L> {
@@ -55,6 +53,7 @@ impl<L: Language> UserDefinedCommand for ColoredFind<L> {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ColoredFindOutput {
     pub value: EClassId,
 }

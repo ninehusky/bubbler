@@ -28,13 +28,14 @@ thread_local! {
     /// 3. The pointer is cleared before the lattice is dropped
     /// 4. Commands execute synchronously on the same thread, so there are no data
     ///    races.
-    static CURRENT_LATTICE: RefCell<Option<*const ()>> = RefCell::new(None);
+    static CURRENT_LATTICE: RefCell<Option<*const ()>> = const { RefCell::new(None) };
 }
 
 /// Set the lattice for the current backend.
 ///
 /// # Panics
 /// Screams if there is already a lattice set.
+#[allow(dead_code)]
 pub fn set_lattice<L: Language>(lattice: &Lattice<L>) {
     CURRENT_LATTICE.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -47,6 +48,7 @@ pub fn set_lattice<L: Language>(lattice: &Lattice<L>) {
 ///
 /// This has to be called after the `EGraph` is dropped to avoid dangling pointers.
 /// If you forget to call this, Bubbler will yell at ya. "Grumble!!"
+#[allow(dead_code)]
 pub fn clear_lattice() {
     CURRENT_LATTICE.with(|slot| {
         *slot.borrow_mut() = None;
@@ -60,6 +62,7 @@ pub fn clear_lattice() {
 ///
 /// # Safety
 /// This is safe because of the invariants on `CURRENT_LATTICE`.
+#[allow(dead_code)]
 pub fn with_lattice<L: Language, R, F: FnOnce(&Lattice<L>) -> R>(f: F) -> R {
     CURRENT_LATTICE.with(|slot| {
         let slot = slot.borrow();

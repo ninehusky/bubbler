@@ -12,14 +12,14 @@ mod graph;
 pub mod implication;
 
 use crate::{
-    bubbler::backend::union_find::{FakeUnionFind, UnionFind},
+    bubbler::backend::uf::{FakeUnionFind, UnionFind},
     language::{Language, term::PredicateTerm},
 };
 use graph::{Graph, NodeId};
 pub use implication::{Condition, Implication};
 use std::collections::HashMap;
 
-use super::{enodes::EClassId, union_find::UnionFindLike};
+use super::uf::UnionFindLike;
 
 /// A colored DAG structure for managing conditional equivalences.
 /// The nodes in the graph are conditions (colors), and the edges are
@@ -31,6 +31,7 @@ use super::{enodes::EClassId, union_find::UnionFindLike};
 /// the north-most node representing the condition `bottom` (false; an error has occurred),
 /// and the south-most node representing the condition `top` (true; no assumptions).
 /// It's confusing, I know.
+#[allow(dead_code)]
 pub struct Lattice<'a, L: Language> {
     graph: Graph<LatticeNode<L>>,
     top: NodeId,

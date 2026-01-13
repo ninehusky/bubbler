@@ -27,7 +27,7 @@ pub use colors::{Condition, Implication};
 mod colors;
 mod enodes;
 mod intern;
-mod union_find;
+mod uf;
 
 // A bunch of variables for storing names of relations/datatypes used in egglog programs.
 // In accordance with the style of other egglog code, datatypes are PascalCased and

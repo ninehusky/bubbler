@@ -1,4 +1,4 @@
-use crate::bubbler::backend::union_find::UFContext;
+use crate::bubbler::backend::uf::UFContext;
 
 use super::UnionFindLike;
 use egglog::Value;
@@ -24,7 +24,7 @@ impl UnionFindLike for FakeUnionFind {
         panic!("Why are you unioning here instead of in the egraph?");
     }
 
-    fn contains(&self, ctx: UFContext<'_>, x: &Value) -> bool {
+    fn contains(&self, _ctx: UFContext<'_>, _x: &Value) -> bool {
         todo!()
     }
 }

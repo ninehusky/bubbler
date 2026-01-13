@@ -2,24 +2,17 @@
 /// I haven't needed to do this since undergrad.
 use std::collections::HashMap;
 
-use crate::bubbler::backend::union_find::UFContext;
+use crate::bubbler::backend::uf::UFContext;
 
 use super::UnionFindLike;
 
 use egglog::Value;
 
+#[derive(Default)]
+#[allow(dead_code)]
 pub struct UnionFind {
     parent: HashMap<Value, Value>,
     rank: HashMap<Value, u32>,
-}
-
-impl Default for UnionFind {
-    fn default() -> Self {
-        Self {
-            parent: HashMap::new(),
-            rank: HashMap::new(),
-        }
-    }
 }
 
 impl UnionFind {
@@ -36,9 +29,9 @@ impl UnionFindLike for UnionFind {
             matches!(ctx, UFContext::None),
             "peek with context is not supported"
         );
-        let mut current = x.clone();
+        let mut current = x;
         while let Some(p) = self.parent.get(&current) {
-            current = p.clone();
+            current = *p;
         }
         current
     }
@@ -52,7 +45,7 @@ impl UnionFindLike for UnionFind {
         );
         if let Some(p) = self.parent.get(&x).cloned() {
             let root = self.find(ctx, p);
-            self.parent.insert(x.clone(), root.clone()); // path compression
+            self.parent.insert(x, root); // path compression
             root
         } else {
             x
@@ -65,8 +58,8 @@ impl UnionFindLike for UnionFind {
             matches!(ctx, UFContext::None),
             "find with context is not supported"
         );
-        let ra = self.find(ctx.clone(), a.clone());
-        let rb = self.find(ctx, b.clone());
+        let ra = self.find(ctx.clone(), a);
+        let rb = self.find(ctx, b);
 
         if ra == rb {
             return;
