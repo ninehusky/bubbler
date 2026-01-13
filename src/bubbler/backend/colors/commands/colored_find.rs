@@ -13,11 +13,11 @@ use crate::{
 /// in a given color `c`.
 /// This almost always means finding the representative term for
 /// a colored e-class in the lattice structure.
-pub struct ColoredFind<'a, L: Language> {
-    lattice: &'a Lattice<'a, L>,
+pub struct ColoredFind<L: Language> {
+    lattice: Arc<Lattice<L>>,
 }
 
-impl<'a, L: Language> UserDefinedCommand for ColoredFind<'a, L> {
+impl<L: Language> UserDefinedCommand for ColoredFind<L> {
     fn update(
         &self,
         egraph: &mut egglog::EGraph,
@@ -65,4 +65,26 @@ impl Display for ColoredFindOutput {
 }
 
 #[cfg(test)]
-pub mod tests {}
+pub mod tests {
+    use std::sync::Arc;
+
+    use egglog::UserDefinedCommand;
+
+    use crate::{
+        bubbler::backend::{EgglogBackend, colors::Lattice},
+        test_langs::llvm::LLVMLang,
+    };
+
+    #[test]
+    fn colored_find_identity() {
+        let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
+        let lattice: Lattice<LLVMLang> = Lattice::new(&backend.egraph, backend.sort());
+
+        let colored_find_cmd = super::ColoredFind {
+            lattice: Arc::new(lattice),
+        };
+        backend
+            .egraph
+            .add_command("colored-find".to_string(), Arc::new(colored_find_cmd));
+    }
+}

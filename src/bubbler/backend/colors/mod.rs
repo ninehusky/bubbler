@@ -30,12 +30,12 @@ use super::{enodes::EClassId, union_find::UnionFindLike};
 /// the north-most node representing the condition `bottom` (false; an error has occurred),
 /// and the south-most node representing the condition `top` (true; no assumptions).
 /// It's confusing, I know.
-pub struct Lattice<'a, L: Language> {
+pub struct Lattice<L: Language> {
     graph: Graph<LatticeNode<L>>,
     top: NodeId,
     bottom: NodeId,
     facts: HashMap<PredicateTerm<L>, NodeId>,
-    ufs: HashMap<NodeId, Box<dyn UnionFindLike + 'a>>,
+    ufs: HashMap<NodeId, Box<dyn UnionFindLike + 'static>>,
 }
 
 #[allow(dead_code)]
@@ -47,7 +47,7 @@ pub enum LatticeNode<L: Language> {
 }
 
 #[allow(dead_code)]
-impl<'a, L: Language> Lattice<'a, L> {
+impl<L: Language> Lattice<L> {
     fn assert_invariants(&self) -> bool {
         // The graph size should be exactly the number of UFs plus 1 (bottom).
         assert_eq!(self.graph.size(), self.ufs.len() + 1);
@@ -84,7 +84,7 @@ impl<'a, L: Language> Lattice<'a, L> {
     }
 
     /// Create a new lattice with just the top and bottom elements.
-    pub fn new(egraph: &'a egglog::EGraph, sort: &'a egglog::ArcSort) -> Self {
+    pub fn new(egraph: &egglog::EGraph, sort: &egglog::ArcSort) -> Self {
         let mut graph = Graph::new();
         let facts = HashMap::new();
         let mut ufs = HashMap::new();
@@ -93,7 +93,7 @@ impl<'a, L: Language> Lattice<'a, L> {
         graph.add_edge(top, bottom); // false -> true, so edge from top to bottom
         ufs.insert(
             top,
-            Box::new(FakeUnionFind::new(egraph, sort)) as Box<dyn UnionFindLike + 'a>,
+            Box::new(FakeUnionFind::new(egraph, sort)) as Box<dyn UnionFindLike>,
         );
         Lattice {
             graph,
