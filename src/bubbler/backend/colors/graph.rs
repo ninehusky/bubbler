@@ -68,6 +68,10 @@ where
     pub fn children(&self, id: NodeId) -> &[NodeId] {
         &self.nodes[id.0].edges
     }
+
+    pub fn size(&self) -> usize {
+        self.nodes.len()
+    }
 }
 
 // @maximenko24: this is a fantastic place to get your feet wet with writing tests in Rust.

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use egglog::{
-    CommandOutput, EGraph,
+    ArcSort, CommandOutput, EGraph,
     ast::{
         Expr, GenericAction, GenericActions, GenericCommand, GenericFact, GenericRule,
         GenericRunConfig, GenericSchedule, Variant,
@@ -27,6 +27,7 @@ pub use colors::{Condition, Implication};
 mod colors;
 mod enodes;
 mod intern;
+mod uf;
 
 // A bunch of variables for storing names of relations/datatypes used in egglog programs.
 // In accordance with the style of other egglog code, datatypes are PascalCased and
@@ -85,6 +86,12 @@ impl<L: Language> EgglogBackend<L> {
             cvec_store: CVecStore::<L>::new(),
             pvec_store: PVecStore::new(),
         }
+    }
+
+    pub fn sort(&self) -> &ArcSort {
+        self.egraph
+            .get_sort_by_name(L::name())
+            .expect("EGraph doesn't know about the base language sort.")
     }
 
     pub fn set_environment(&mut self, environment: Environment<L>) {
@@ -608,13 +615,12 @@ impl<L: Language> EgglogBackend<L> {
             .run_program(commands)
             .map_err(|e| format!("Failed to add term: {:?}", e))?;
 
-        self.get_eclass_id(&term)
+        Self::get_eclass_id(&mut self.egraph, &term)
     }
 
-    pub fn get_eclass_id(&mut self, term: &Term<L>) -> Result<EClassId, String> {
+    pub fn get_eclass_id(egraph: &mut egglog::EGraph, term: &Term<L>) -> Result<EClassId, String> {
         let t_expr: Expr = term.clone().into();
-        let outputs = self
-            .egraph
+        let outputs = egraph
             .parse_and_run_program(None, format!("(extract {})", t_expr).as_str())
             .map_err(|e| format!("Failed to get class ID: {:?}", e))?;
 
@@ -625,13 +631,12 @@ impl<L: Language> EgglogBackend<L> {
         };
 
         let expr = termdag.term_to_expr(&term, span!());
-        let (sort, value) = self
-            .egraph
+        let (sort, value) = egraph
             .eval_expr(&expr)
             .map_err(|e| format!("Failed to evaluate expr: {:?}", e))?;
 
-        let id = self.egraph.get_canonical_value(value, &sort);
-        Ok(id)
+        let id = egraph.get_canonical_value(value, &sort);
+        Ok(EClassId(id))
     }
 
     pub fn add_predicate(
@@ -1331,7 +1336,7 @@ mod tests {
             vec![Term::Var("x".into()), Term::Var("y".into())],
         );
         let id = backend.add_term(term.clone(), false).unwrap();
-        let fetched_id = backend.get_eclass_id(&term).unwrap();
+        let fetched_id = EgglogBackend::get_eclass_id(&mut backend.egraph, &term).unwrap();
 
         assert_eq!(id, fetched_id);
     }
@@ -1341,7 +1346,7 @@ mod tests {
         let mut backend: EgglogBackend<LLVMLang> = EgglogBackend::new();
         let term = Term::Var("z".into());
         let id = backend.add_term(term.clone(), false).unwrap();
-        let fetched_id = backend.get_eclass_id(&term).unwrap();
+        let fetched_id = EgglogBackend::get_eclass_id(&mut backend.egraph, &term).unwrap();
 
         assert_eq!(id, fetched_id);
     }
