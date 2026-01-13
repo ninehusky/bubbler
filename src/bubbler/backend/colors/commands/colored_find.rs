@@ -111,7 +111,8 @@ pub mod tests {
 
         let result = backend.egraph.parse_and_run_program(
             None,
-            // that "2" is a dummy. eventually it'll be a color or we'll have a special encoding for black.
+            // the BaseTerm (Var "true") is just a placeholder for the color stuff.
+            // in a separate PR, we'll actually look up the color e-class.
             r#"(colored-find (BaseTerm (Var "true")) (Add (Var "x") (Var "y")))"#,
         );
 
@@ -124,7 +125,7 @@ pub mod tests {
 
         let val = match &msgs[0] {
             egglog::CommandOutput::ExtractBest(termdag, _, term) => {
-                let expr = termdag.term_to_expr(&term, span!());
+                let expr = termdag.term_to_expr(term, span!());
                 backend.egraph.eval_expr(&expr).unwrap().1
             }
             _ => panic!("Expected extracted values"),
