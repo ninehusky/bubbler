@@ -12,14 +12,21 @@ mod graph;
 pub mod implication;
 
 use crate::{
-    bubbler::backend::uf::{FakeUnionFind, UnionFind},
+    bubbler::backend::{
+        colors::context::{lattice_is_set, with_lattice},
+        enodes::EClassId,
+        uf::{FakeUnionFind, UFContext, UnionFind},
+    },
     language::{Language, term::PredicateTerm},
 };
+use egglog::EGraph;
 use graph::{Graph, NodeId};
 pub use implication::{Condition, Implication};
 use std::collections::HashMap;
 
 use super::uf::UnionFindLike;
+
+pub type ColorId = NodeId;
 
 /// A colored DAG structure for managing conditional equivalences.
 /// The nodes in the graph are conditions (colors), and the edges are
@@ -34,10 +41,10 @@ use super::uf::UnionFindLike;
 #[allow(dead_code)]
 pub struct Lattice<'a, L: Language> {
     graph: Graph<LatticeNode<L>>,
-    top: NodeId,
-    bottom: NodeId,
-    facts: HashMap<PredicateTerm<L>, NodeId>,
-    ufs: HashMap<NodeId, Box<dyn UnionFindLike + 'a>>,
+    top: ColorId,
+    bottom: ColorId,
+    facts: HashMap<PredicateTerm<L>, ColorId>,
+    ufs: HashMap<ColorId, Box<dyn UnionFindLike + 'a>>,
 }
 
 #[allow(dead_code)]
@@ -51,6 +58,8 @@ pub enum LatticeNode<L: Language> {
 #[allow(dead_code)]
 impl<'a, L: Language> Lattice<'a, L> {
     fn assert_invariants(&self) -> bool {
+        assert!(self.ufs.contains_key(&self.top));
+
         // The graph size should be exactly the number of UFs plus 1 (bottom).
         assert_eq!(self.graph.size(), self.ufs.len() + 1);
 
@@ -60,18 +69,90 @@ impl<'a, L: Language> Lattice<'a, L> {
         true
     }
 
-    fn fact_node(&mut self, cond: PredicateTerm<L>) -> NodeId {
+    /// Trim edges that are redundant in the lattice.
+    fn trim_edges(&mut self) {
+        todo!("MAXIM!!! Implement this now!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    }
+
+    fn add_color(&mut self, predicate: PredicateTerm<L>) -> ColorId {
+        let id = self.graph.add_node(LatticeNode::Fact(predicate.clone()));
+        self.facts.insert(predicate, id);
+        self.ufs.insert(id, Box::new(UnionFind::new()));
+        // here, add an implication from true -> new color.
+        self.graph.add_edge(self.top, id);
+
+        self.assert_invariants();
+
+        id
+    }
+
+    // This `egraph` parameter is potentially unsafe. I guess the invariant for a Bubbler overall is that
+    // the `egraph` you pass into here _must_ be the same one that represents "top" in the lattice.
+    fn colored_find(&mut self, egraph: &mut EGraph, color: ColorId, elem: EClassId) -> EClassId {
+        assert_eq!(
+            egraph.get_canonical_value(elem.0, egraph.get_sort_by_name(L::name()).unwrap()),
+            elem.0,
+            "Element passed to colored_find is not canonical!"
+        );
+
+        let uf = self
+            .ufs
+            .get_mut(&color)
+            .expect("No UF for color in colored_find"); // do we wanna use `ensure_color` here?
+
+        let uf_ctx = if self.top == color {
+            UFContext::EGraph {
+                egraph,
+                sort: egraph.get_sort_by_name(L::name()).unwrap(),
+            }
+        } else {
+            UFContext::None
+        };
+
+        let rep = uf.find(uf_ctx, elem.0);
+        EClassId(rep)
+    }
+
+    fn colored_merge(&mut self, egraph: &mut EGraph, color: ColorId, a: EClassId, b: EClassId) {
+        if color == self.top {
+            panic!("Why are you merging under the top color? Just merge normally!");
+        }
+        assert_eq!(
+            egraph.get_canonical_value(a.0, egraph.get_sort_by_name(L::name()).unwrap()),
+            a.0,
+            "Element passed to colored_find is not canonical!"
+        );
+
+        assert_eq!(
+            egraph.get_canonical_value(b.0, egraph.get_sort_by_name(L::name()).unwrap()),
+            b.0,
+            "Element passed to colored_find is not canonical!"
+        );
+
+        let uf = self
+            .ufs
+            .get_mut(&color)
+            .expect("No UF for color in colored_merge");
+
+        let uf_ctx = UFContext::None;
+
+        uf.union(uf_ctx, a.0, b.0);
+    }
+
+    fn fact_node(&mut self, cond: PredicateTerm<L>) -> ColorId {
         if let Some(&id) = self.facts.get(&cond) {
             id
         } else {
+            println!("debug: adding new fact node for condition {:?}", cond);
             let id = self.graph.add_node(LatticeNode::Fact(cond.clone()));
             self.facts.insert(cond, id);
+            self.graph.add_edge(self.top, id);
             self.ufs.insert(id, Box::new(UnionFind::new()));
             id
         }
     }
 
-    pub fn top(&self) -> NodeId {
+    pub fn top(&self) -> ColorId {
         self.top
     }
 
@@ -91,6 +172,9 @@ impl<'a, L: Language> Lattice<'a, L> {
 
     /// Create a new lattice with just the top and bottom elements.
     pub fn new() -> Self {
+        if lattice_is_set() {
+            panic!("Lattice is already set!");
+        }
         let mut graph = Graph::new();
         let facts = HashMap::new();
         let mut ufs = HashMap::new();

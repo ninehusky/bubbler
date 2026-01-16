@@ -2,6 +2,11 @@ use std::{fmt::Display, hash::Hash, str::FromStr};
 
 use super::{CVec, Constant, Environment, Language, OpTrait};
 
+use egglog::{
+    EGraph, Error,
+    ast::{Command, Expr, Fact},
+    prelude::{RustSpan, Span, span},
+};
 use ruler::enumo::Sexp;
 use std::collections::HashMap;
 
@@ -9,7 +14,7 @@ use std::collections::HashMap;
 // NOTE(@ninehusky): I'm still unsure how this should get structured.
 // You might imagine later on something like a `Condition<L>`,
 // and then `PredicateTerm<L>` is the AST node for that condition language.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq)]
 pub struct PredicateTerm<L: Language> {
     pub term: Term<L>,
 }
@@ -17,6 +22,41 @@ pub struct PredicateTerm<L: Language> {
 impl<L: Language> PredicateTerm<L> {
     pub fn from_term(term: Term<L>) -> Self {
         Self { term }
+    }
+
+    // TODO(@ninehusky): forbid user-created vars named true.
+    fn tt() -> Self {
+        Self {
+            term: Term::Var("true".to_string()),
+        }
+    }
+
+    /// Returns if this predicate term is equivalent to true in the given egraph.
+    pub fn is_true(&self, egraph: &mut EGraph) -> bool {
+        let res = egraph.run_program(vec![Command::Check(
+            span!(),
+            vec![Fact::Eq(
+                span!(),
+                Expr::from(self.clone()),
+                Expr::from(PredicateTerm::<L>::tt()),
+            )],
+        )]);
+        match res {
+            Ok(_) => true,
+            Err(Error::CheckError(..)) => false,
+            Err(_) => {
+                panic!("Error when checking if predicate is true.")
+            }
+        }
+    }
+}
+
+impl<L: Language> PartialEq for PredicateTerm<L> {
+    fn eq(&self, other: &Self) -> bool {
+        eprintln!(
+            "warning: This is a syntactic check; consider using `is_true` for semantic equality."
+        );
+        self.term == other.term
     }
 }
 
