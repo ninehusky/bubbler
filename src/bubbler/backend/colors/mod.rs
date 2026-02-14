@@ -17,7 +17,7 @@ use crate::{
         enodes::EClassId,
         uf::{FakeUnionFind, UFContext, UnionFind},
     },
-    language::{Language, term::PredicateTerm},
+    language::{term::PredicateTerm, Language},
 };
 use egglog::EGraph;
 use graph::{Graph, NodeId};
@@ -67,6 +67,13 @@ impl<'a, L: Language> Lattice<'a, L> {
         // because of the top element.
         assert_eq!(self.facts.len() + 1, self.ufs.len());
         true
+    }
+
+    /// Reestablishes the colored invariant. See the doc comment on
+    /// `colored_rebuild` for more details. This is a no-op for now, but eventually
+    /// will need to do some work to trim redundant edges and rebuild UFs.
+    fn rebuild(&mut self) {
+        todo!("I sure wish Stella was here to help me implement this...");
     }
 
     /// Trim edges that are redundant in the lattice.
