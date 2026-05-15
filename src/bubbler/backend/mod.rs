@@ -22,11 +22,14 @@ use crate::language::{
     term::{PredicateTerm, Term},
 };
 
+use lowering::EgglogLowering;
+
 pub use colors::{Condition, Implication};
 
 mod colors;
 mod enodes;
 mod intern;
+mod lowering;
 mod uf;
 
 // A bunch of variables for storing names of relations/datatypes used in egglog programs.
@@ -620,13 +623,13 @@ impl<L: Language> EgglogBackend<L> {
 
     pub fn get_eclass_id(egraph: &mut egglog::EGraph, term: &Term<L>) -> Result<EClassId, String> {
         let t_expr: Expr = term.clone().into();
-        let outputs = egraph
-            .parse_and_run_program(None, format!("(extract {})", t_expr).as_str())
+        let output = EgglogLowering::new(egraph)
+            .extract_best(t_expr)
             .map_err(|e| format!("Failed to get class ID: {:?}", e))?;
 
         // Maybe there's a way to get the canonical value out of the egraph without
         // extracting, but I don't think I know it offhand.
-        let CommandOutput::ExtractBest(termdag, _cost, term) = outputs[0].clone() else {
+        let CommandOutput::ExtractBest(termdag, _cost, term) = output else {
             return Err("Expected ExtractBest output.".to_string());
         };
 
@@ -893,7 +896,11 @@ impl<L: Language> From<PredicateTerm<L>> for Expr {
 
 #[cfg(test)]
 mod tests {
-    use egglog::CommandOutput;
+    use egglog::{
+        CommandOutput,
+        ast::{GenericAction, GenericCommand},
+        span,
+    };
 
     use super::*;
     use crate::test_langs::llvm::{LLVMLang, LLVMLangOp};
@@ -968,13 +975,24 @@ mod tests {
         backend.run_implications().unwrap();
 
         // Now, we should have that (implies (a < 1) (a + 1 != 2)).
-        backend
-            .egraph
-            .parse_and_run_program(
-                None,
-                "(check (implies (BaseTerm (Lt (Var \"a\") (Const 1))) (BaseTerm (Neq (Add (Var \"a\") (Const 1)) (Const 2)))))",
+        assert!(backend
+            .is_implied(
+                &PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Lt,
+                    vec![Term::Var("a".into()), Term::Const(1.into())],
+                )),
+                &PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Neq,
+                    vec![
+                        Term::Call(
+                            LLVMLangOp::Add,
+                            vec![Term::Var("a".into()), Term::Const(1.into())],
+                        ),
+                        Term::Const(2.into()),
+                    ],
+                )),
             )
-            .unwrap();
+            .unwrap());
     }
 
     #[test]
@@ -992,7 +1010,7 @@ mod tests {
             .unwrap();
         let result = backend
             .egraph
-            .parse_and_run_program(None, "(print-size)")
+            .run_program(vec![GenericCommand::PrintSize(span!(), None)])
             .unwrap();
 
         assert_eq!(result.len(), 1);
@@ -1050,13 +1068,18 @@ mod tests {
         backend.run_rewrites().unwrap();
 
         // Check that the egraph contains the RHS term, and that it is unioned with the LHS term.
-        backend
-            .egraph
-            .parse_and_run_program(
-                None,
-                "(check (= (Ge (Var \"b\") (Var \"a\")) (Le (Var \"a\") (Var \"b\"))) )",
+        assert!(backend
+            .is_equal(
+                &Term::Call(
+                    LLVMLangOp::Ge,
+                    vec![Term::Var("b".into()), Term::Var("a".into())],
+                ),
+                &Term::Call(
+                    LLVMLangOp::Le,
+                    vec![Term::Var("a".into()), Term::Var("b".into())],
+                ),
             )
-            .unwrap();
+            .unwrap());
     }
 
     #[test]
@@ -1087,10 +1110,15 @@ mod tests {
         backend.run_rewrites().unwrap();
 
         // Check that the egraph contains the RHS term, and that it is unioned with the LHS term.
-        backend
-            .egraph
-            .parse_and_run_program(None, "(check (= (Var \"y\") (Add (Const 0) (Var \"y\"))))")
-            .unwrap();
+        assert!(backend
+            .is_equal(
+                &Term::Var("y".into()),
+                &Term::Call(
+                    LLVMLangOp::Add,
+                    vec![Term::Const(0.into()), Term::Var("y".into())],
+                ),
+            )
+            .unwrap());
     }
 
     #[test]
@@ -1125,10 +1153,15 @@ mod tests {
         backend.run_rewrites().unwrap();
 
         // Check that the egraph contains the RHS term, and that it is unioned with the LHS term.
-        backend
-            .egraph
-            .parse_and_run_program(None, "(check (= (Var \"a\") (Add (Var \"a\") (Const 0))) )")
-            .unwrap();
+        assert!(backend
+            .is_equal(
+                &Term::Var("a".into()),
+                &Term::Call(
+                    LLVMLangOp::Add,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                ),
+            )
+            .unwrap());
     }
 
     #[test]
@@ -1161,29 +1194,33 @@ mod tests {
             .unwrap();
 
         // should fail initially
-        assert!(matches!(
-            backend
-                .egraph
-                .parse_and_run_program(None, "(check (= (Const 1) (Div (Var \"a\") (Var \"a\"))))",)
-                .unwrap_err(),
-            egglog::Error::CheckError(..)
-        ));
+        assert!(!backend
+            .is_equal(
+                &Term::Const(1.into()),
+                &Term::Call(
+                    LLVMLangOp::Div,
+                    vec![Term::Var("a".into()), Term::Var("a".into())],
+                ),
+            )
+            .unwrap());
 
         // ...then we run the rules,
         backend.run_rewrites().unwrap();
 
         // ...and after it should show that 1== (a / a) under the condition that a != 0.
-        backend
-            .egraph
-            .parse_and_run_program(
-                None,
-                format!(
-                    "(check ({} (BaseTerm (Neq (Var \"a\") (Const 0)))  (Div (Var \"a\") (Var \"a\")) (Const 1)))",
-                    bubbler_defns::COND_EQUAL_RELATION
-                )
-                .as_str(),
+        assert!(backend
+            .is_conditionally_equal(
+                &PredicateTerm::from_term(Term::Call(
+                    LLVMLangOp::Neq,
+                    vec![Term::Var("a".into()), Term::Const(0.into())],
+                )),
+                &Term::Call(
+                    LLVMLangOp::Div,
+                    vec![Term::Var("a".into()), Term::Var("a".into())],
+                ),
+                &Term::Const(1.into()),
             )
-            .unwrap();
+            .unwrap());
     }
 
     #[test]
@@ -1299,19 +1336,41 @@ mod tests {
         // mark that under condition p, a == b
         backend
             .egraph
-            .parse_and_run_program(
-                None,
-                "(cond-equal (BaseTerm (Neq (Var \"a\") (Const 0))) (Var \"a\") (Var \"b\"))",
-            )
+            .run_program(vec![GenericCommand::Action(GenericAction::Expr(
+                span!(),
+                call!(
+                    bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                    vec![
+                        PredicateTerm::<LLVMLang>::from_term(Term::<LLVMLang>::Call(
+                            LLVMLangOp::Neq,
+                            vec![Term::<LLVMLang>::Var("a".into()), Term::<LLVMLang>::Const(0.into())],
+                        ))
+                        .into(),
+                        Term::<LLVMLang>::Var("a".into()).into(),
+                        Term::<LLVMLang>::Var("b".into()).into(),
+                    ]
+                ),
+            ))])
             .unwrap();
 
         // mark that under condition q, b == c
         backend
             .egraph
-            .parse_and_run_program(
-                None,
-                "(cond-equal (BaseTerm (Gt (Var \"a\") (Const 0))) (Var \"b\") (Var \"c\"))",
-            )
+            .run_program(vec![GenericCommand::Action(GenericAction::Expr(
+                span!(),
+                call!(
+                    bubbler_defns::COND_EQUAL_RELATION.to_string(),
+                    vec![
+                        PredicateTerm::<LLVMLang>::from_term(Term::<LLVMLang>::Call(
+                            LLVMLangOp::Gt,
+                            vec![Term::<LLVMLang>::Var("a".into()), Term::<LLVMLang>::Const(0.into())],
+                        ))
+                        .into(),
+                        Term::<LLVMLang>::Var("b".into()).into(),
+                        Term::<LLVMLang>::Var("c".into()).into(),
+                    ]
+                ),
+            ))])
             .unwrap();
 
         assert!(
