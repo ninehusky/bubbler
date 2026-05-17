@@ -1,6 +1,7 @@
 use backend::EgglogBackend;
 use identification::{
-    ConditionalCvecMatch, CvecMatch, IdentificationConfig, IdentificationMode, PvecMatch,
+    AxiomMatch, ConditionalCvecMatch, CvecMatch, IdentificationConfig, IdentificationMode,
+    PvecMatch,
 };
 use minimization::BasicImplicationMinimize;
 use minimization::score_fns::implication_score_fns;
@@ -28,6 +29,7 @@ type ImplicationFacts<L> = InferredFacts<L>;
 pub enum InferredFacts<L: Language> {
     Implications(Vec<Implication<L>>),
     Rewrites(Vec<Rewrite<L>>),
+    Axioms(Vec<PredicateTerm<L>>),
 }
 
 pub struct BubblerConfig<L: Language> {
@@ -106,6 +108,23 @@ impl<L: Language> Bubbler<L> {
         };
 
         InferredFacts::Implications(imps)
+    }
+
+    /// Find all predicates in `wkld` that are unconditionally true over the
+    /// evaluation environment (all-true PVec). These are shape-based axioms
+    /// like `abs(x) >= 0` that hold regardless of variable values.
+    pub fn find_axioms(&self, wkld: &Workload) -> InferredFacts<L> {
+        let mut backend = self.new_backend();
+
+        let enumerator = BasicEnumerate::new(enumeration::EnumerationConfig {
+            mode: enumeration::EnumerationMode::Predicates,
+            evaluate: true,
+        });
+        enumerator
+            .enumerate_bubbler(&mut backend, wkld.clone())
+            .unwrap();
+
+        AxiomMatch::new().identify(&mut backend).unwrap()
     }
 
     /// Using the Bubbler's current inferred rules and implications,
