@@ -375,6 +375,81 @@ impl<L: Language> EgglogBackend<L> {
                 },
             }])
             .unwrap();
+
+        // Or idempotency: Or(P, P) = P. Merges the e-class of Or(a, a) with a
+        // so that idempotent Or predicates don't generate spurious candidates.
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Union(
+                        span!(),
+                        call!(
+                            bubbler_defns::BASE_TERM.to_string(),
+                            vec![call!(
+                                "Or".to_string(),
+                                vec![var!("a".to_string()), var!("a".to_string())]
+                            )]
+                        ),
+                        call!(bubbler_defns::BASE_TERM.to_string(), vec![var!("a".to_string())]),
+                    )]),
+                    body: vec![GenericFact::Fact(call!(
+                        bubbler_defns::BASE_TERM.to_string(),
+                        vec![call!(
+                            "Or".to_string(),
+                            vec![var!("a".to_string()), var!("a".to_string())]
+                        )]
+                    ))],
+                    name: "or-idempotency".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
+
+        // Conjunction elimination: And(P, Q) implies P, and And(P, Q) implies Q.
+        // These are logical tautologies; registering them lets the minimizer prune
+        // any candidate of the form And(P,Q)→P or And(P,Q)→Q immediately, and
+        // transitivity then chains to prune And(P,Q)→R whenever P→R is known.
+        for (rule_name, consequent_var) in [("and-elim-left", "a"), ("and-elim-right", "b")] {
+            egraph
+                .run_program(vec![GenericCommand::Rule {
+                    rule: GenericRule {
+                        span: span!(),
+                        head: GenericActions(vec![GenericAction::Expr(
+                            span!(),
+                            call!(
+                                bubbler_defns::IMPLIES_RELATION.to_string(),
+                                vec![
+                                    call!(
+                                        bubbler_defns::BASE_TERM.to_string(),
+                                        vec![call!(
+                                            "And".to_string(),
+                                            vec![
+                                                var!("a".to_string()),
+                                                var!("b".to_string())
+                                            ]
+                                        )]
+                                    ),
+                                    call!(
+                                        bubbler_defns::BASE_TERM.to_string(),
+                                        vec![var!(consequent_var.to_string())]
+                                    ),
+                                ]
+                            ),
+                        )]),
+                        body: vec![GenericFact::Fact(call!(
+                            bubbler_defns::BASE_TERM.to_string(),
+                            vec![call!(
+                                "And".to_string(),
+                                vec![var!("a".to_string()), var!("b".to_string())]
+                            )]
+                        ))],
+                        name: rule_name.to_string(),
+                        ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                    },
+                }])
+                .unwrap();
+        }
     }
 
     /// Returns all predicates whose PVec is all-true over the current environment —
@@ -561,27 +636,28 @@ impl<L: Language> EgglogBackend<L> {
     pub fn register_implication(&mut self, implication: &Implication<L>) -> Result<(), String> {
         let lhs = &implication.from;
         let rhs = &implication.to;
-        self.egraph
-            .run_program(vec![GenericCommand::Rule {
-                rule: GenericRule {
-                    span: span!(),
-                    head: GenericActions(vec![GenericAction::Expr(
-                        span!(),
-                        // mark the LHS and RHS as implied if...
-                        call!(
-                            bubbler_defns::IMPLIES_RELATION.to_string(),
-                            vec![lhs.clone().into(), rhs.clone().into()]
-                        ),
-                    )]),
-                    // ...we can see that the LHS is in the egraph.
-                    body: vec![GenericFact::Fact(lhs.clone().into())],
-                    name: format!("{}", implication),
-                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
-                },
-            }])
-            .map_err(|e| format!("Failed to register implication: {:?}", e).to_string())?;
 
-        Ok(())
+        let result = self.egraph.run_program(vec![GenericCommand::Rule {
+            rule: GenericRule {
+                span: span!(),
+                head: GenericActions(vec![GenericAction::Expr(
+                    span!(),
+                    call!(
+                        bubbler_defns::IMPLIES_RELATION.to_string(),
+                        vec![lhs.clone().into(), rhs.clone().into()]
+                    ),
+                )]),
+                body: vec![GenericFact::Fact(lhs.clone().into())],
+                name: format!("{}", implication),
+                ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+            },
+        }]);
+
+        match result {
+            Ok(_) => Ok(()),
+            Err(e) if format!("{:?}", e).contains("already present") => Ok(()),
+            Err(e) => Err(format!("Failed to register implication: {:?}", e)),
+        }
     }
 
     pub fn add_term(&mut self, term: Term<L>, with_cvec: bool) -> Result<EClassId, String> {
@@ -778,6 +854,23 @@ impl<L: Language> EgglogBackend<L> {
             Ok(_) => Ok(true),
             Err(egglog::Error::CheckError(_, _)) => Ok(false),
             Err(e) => Err(format!("Failed to check equality: {:?}", e)),
+        }
+    }
+
+    /// Print all facts currently in the `implies` relation, up to `limit`.
+    pub fn dump_implies(&mut self, limit: usize) {
+        let result = self.egraph.parse_and_run_program(
+            None,
+            &format!("(print-function {} {})", bubbler_defns::IMPLIES_RELATION, limit),
+        );
+        match result {
+            Ok(outputs) => {
+                eprintln!("[dump_implies] {} outputs:", outputs.len());
+                for o in &outputs {
+                    eprintln!("  {:?}", o);
+                }
+            }
+            Err(e) => eprintln!("[dump_implies] error: {:?}", e),
         }
     }
 

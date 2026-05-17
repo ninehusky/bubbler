@@ -60,10 +60,25 @@ impl<L: Language> Implication<L> {
                 .generalize(&mut map)
                 .map_err(|e| format!("Failed to generalize LHS of implication: {}", e))?,
         };
+        let from_bound = map.len();
         let to_generalized = to
             .term
             .generalize(&mut map)
             .map_err(|e| format!("Failed to generalize RHS of implication: {}", e))?;
+
+        // `generalize` converts Term::Var → Term::Hole and records each mapping in
+        // `map`. Any variables in the consequent that weren't already in the
+        // antecedent get fresh entries — detected by map growing past `from_bound`.
+        // Those fresh holes have no binding in the egglog rule body, which egglog
+        // rejects as an unbound variable error.
+        if map.len() > from_bound {
+            return Err(format!(
+                "Consequent introduces variables not bound by antecedent: {} --> {}",
+                from_generalized.to_sexp(),
+                to_generalized.to_sexp()
+            ));
+        }
+
         Ok(Self {
             from: match from.clone() {
                 Condition::Predicate(_) => {
@@ -107,3 +122,4 @@ impl<L: Language> std::fmt::Display for Implication<L> {
         )
     }
 }
+

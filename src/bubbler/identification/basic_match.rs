@@ -2,7 +2,7 @@
 
 use crate::{
     bubbler::{Implication, InferredFacts, backend::EgglogBackend, schedule::Identification},
-    language::{CVec, Language, PVec, rewrite::Rewrite},
+    language::{CVec, Language, OpTrait, PVec, Term, rewrite::Rewrite},
 };
 
 use super::IdentificationConfig;
@@ -155,6 +155,14 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
             }
         }
 
+        // Build a reverse map from predicate terms to their PVecs for the
+        // extended Or-weakening filter (step 2).
+        let term_to_pvec: std::collections::HashMap<&crate::language::PredicateTerm<L>, &PVec> =
+            pvec_map
+                .iter()
+                .flat_map(|(pvec, terms)| terms.iter().map(move |t| (t, pvec)))
+                .collect();
+
         let mut candidates = vec![];
         for (from, to) in matching_pvecs {
             let from_terms = pvec_map.get(&from).unwrap();
@@ -162,13 +170,77 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
 
             for from_term in from_terms {
                 for to_term in to_terms {
-                    let implication =
-                        Implication::new(from_term.clone().into(), to_term.clone()).unwrap();
-                    candidates.push(implication);
+                    // Skip trivially true implications:
+                    //
+                    // Syntactic: And(P,Q)→P/Q and P→Or(P,Q)/Q→Or(P,Q).
+                    //
+                    // PVec-lattice: P → Or(Q, R) when pvec(P) ⊆ pvec(Q) or
+                    // pvec(P) ⊆ pvec(R). These are derivable through the lattice
+                    // even when P is not literally a component of Or.
+                    let syntactic_trivial = match (&from_term.term, &to_term.term) {
+                        (Term::Call(f, args), _) if f.is_conjunction() => {
+                            args.iter().any(|a| a == &to_term.term)
+                        }
+                        (_, Term::Call(t, args)) if t.is_disjunction() => {
+                            args.iter().any(|a| a == &from_term.term)
+                        }
+                        _ => false,
+                    };
+
+                    let pvec_trivial = if let Term::Call(t, or_args) = &to_term.term {
+                        if t.is_disjunction() && or_args.len() == 2 {
+                            let p = crate::language::PredicateTerm::from_term(or_args[0].clone());
+                            let q = crate::language::PredicateTerm::from_term(or_args[1].clone());
+                            let pv_p = term_to_pvec.get(&p);
+                            let pv_q = term_to_pvec.get(&q);
+                            // P → Or(Q,R) is trivial if pvec(P) ⊆ pvec(Q) or pvec(P) ⊆ pvec(R)
+                            pv_p.map_or(false, |pq| {
+                                from.iter().zip(pq.iter()).all(|(a, b)| !*a || *b)
+                            }) || pv_q.map_or(false, |pq| {
+                                from.iter().zip(pq.iter()).all(|(a, b)| !*a || *b)
+                            })
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    // Skip And(P,Q)→R when all of R's pattern holes are covered
+                    // by P alone or Q alone — dominated by the single-antecedent P→R
+                    // or Q→R, which the minimizer would already have or will find.
+                    let and_dominated = if let Term::Call(f, and_args) = &from_term.term {
+                        if f.is_conjunction() && and_args.len() == 2 {
+                            let r_holes = to_term.term.holes();
+                            let p_holes = and_args[0].holes();
+                            let q_holes = and_args[1].holes();
+                            let covered_by_p = r_holes.iter().all(|h| p_holes.contains(h));
+                            let covered_by_q = r_holes.iter().all(|h| q_holes.contains(h));
+                            covered_by_p || covered_by_q
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                    if syntactic_trivial || pvec_trivial || and_dominated {
+                        continue;
+                    }
+
+                    // Skip implications where the consequent introduces variables
+                    // not bound by the antecedent — those are structurally
+                    // unregisterable in egglog (need a universe relation).
+                    if let Ok(implication) =
+                        Implication::new(from_term.clone().into(), to_term.clone())
+                    {
+                        candidates.push(implication);
+                    }
                 }
             }
         }
 
+        eprintln!("[pvec_match] {} implication candidates", candidates.len());
         Ok(InferredFacts::Implications(candidates))
     }
 }

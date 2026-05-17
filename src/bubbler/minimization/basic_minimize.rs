@@ -230,6 +230,12 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
 
         let mut chosen: Vec<Implication<L>> = self.existing.clone();
 
+        // Drop any candidate that is already in the known-good set — re-registering
+        // it would trigger an egglog "already present" panic.
+        candidates.retain(|c| !chosen.contains(c));
+
+        eprintln!("[minimizer] {} candidates before minimization", candidates.len());
+
         for imp in candidates.iter() {
             let pre = imp.lhs_concrete();
             let post = imp.rhs_concrete();
@@ -238,19 +244,32 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
         }
 
         // 2. Iteratively add implications and remove redundant ones.
+        let mut iter = 0usize;
         while let Some(selected) = candidates.pop() {
+            iter += 1;
+            eprintln!("[minimizer] iter {iter}: registering: {selected}  ({} remaining)", candidates.len());
             chosen.push(selected.clone());
+
+            eprintln!("[minimizer]   register_implication...");
             backend.register_implication(&selected).unwrap();
 
+            eprintln!("[minimizer]   run_implications...");
             backend.run_implications().unwrap();
 
-            // Remove redundant candidates.
+            if iter <= 2 {
+                eprintln!("[minimizer]   implies relation after iter {iter}:");
+                backend.dump_implies(30);
+            }
+
+            eprintln!("[minimizer]   pruning...");
+            let before = candidates.len();
             candidates.retain(|imp| {
                 let pre = imp.lhs_concrete();
                 let post = imp.rhs_concrete();
 
                 !backend.is_implied(&pre, &post).unwrap()
             });
+            eprintln!("[minimizer]   pruned {} → {} candidates", before, candidates.len());
         }
 
         // 3. Only add the new rules.
