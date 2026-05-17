@@ -1,7 +1,7 @@
 mod basic_match;
 mod bubbler_match;
 
-pub use basic_match::{ConditionalCvecMatch, CvecMatch, PvecMatch};
+pub use basic_match::{AxiomMatch, ConditionalCvecMatch, CvecMatch, PvecMatch};
 
 /// Describes the kind fact that is being identified.
 #[allow(dead_code)]

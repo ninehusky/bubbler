@@ -377,6 +377,16 @@ impl<L: Language> EgglogBackend<L> {
             .unwrap();
     }
 
+    /// Returns all predicates whose PVec is all-true over the current environment —
+    /// i.e., predicates that hold unconditionally for any variable assignment.
+    pub fn get_axioms(&mut self) -> Vec<PredicateTerm<L>> {
+        self.get_pvec_map()
+            .into_iter()
+            .filter(|(pvec, _)| pvec.iter().all(|&b| b))
+            .flat_map(|(_, terms)| terms)
+            .collect()
+    }
+
     /// Returns a mapping from CVecs to terms in the egraph with those CVecs.
     pub fn get_cvec_map(&mut self) -> HashMap<CVec<L>, Vec<Term<L>>> {
         let result = self

@@ -68,15 +68,31 @@ impl<L: Language> Identification<L> for CvecMatch<L> {
     }
 }
 
+/// AxiomMatch finds predicates that are unconditionally true over the evaluation
+/// environment — those whose PVec is all-true. These are shape-based axioms
+/// like `abs(x) >= 0` that require no antecedent predicate.
+pub struct AxiomMatch<L: Language> {
+    _marker: std::marker::PhantomData<L>,
+}
+
+impl<L: Language> AxiomMatch<L> {
+    pub fn new() -> Self {
+        Self {
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<L: Language> Identification<L> for AxiomMatch<L> {
+    fn identify(&self, backend: &mut EgglogBackend<L>) -> Result<InferredFacts<L>, String> {
+        Ok(InferredFacts::Axioms(backend.get_axioms()))
+    }
+}
+
 /// PvecMatch finds likely candidates for _implications_ through pvec matching.
 /// Formally, two predicates with pvecs `p, q` are a match if
 /// `\forall i. p[i] => q[i]`. Like in the real world, implications in
 /// the forward directions do not guarantee implications in the reverse direction.
-///
-// NOTE: pvec matching only works for predicates. If you want to discover
-// predicates which hold for _any_ term, use a different matching strategy
-// (which I'll implement soon!).
-// TODO(@ninehusky): implement the above.
 #[allow(dead_code)]
 pub struct PvecMatch<L: Language> {
     cfg: IdentificationConfig,
