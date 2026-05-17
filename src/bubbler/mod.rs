@@ -95,7 +95,7 @@ impl<L: Language> Bubbler<L> {
         .identify(&mut backend)
         .unwrap();
 
-        let score_fn = implication_score_fns::prioritize_vars();
+        let score_fn = implication_score_fns::pvec_strength();
 
         // 4. Using what we know, minimize the candidates to only keep the best ones.
         let minimizer: BasicImplicationMinimize<L> =

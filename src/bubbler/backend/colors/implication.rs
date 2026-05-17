@@ -46,6 +46,11 @@ impl<L: Language> From<Condition<L>> for Expr {
 pub struct Implication<L: Language> {
     pub from: Condition<L>,
     pub to: PredicateTerm<L>,
+    /// Number of true slots in the antecedent's PVec. More = weaker antecedent = more general.
+    /// Zero when not set (e.g. manually constructed implications).
+    pub pvec_ante_count: usize,
+    /// Number of true slots in the consequent's PVec. Fewer = stronger consequent = more informative.
+    pub pvec_cons_count: usize,
 }
 
 impl<L: Language> Implication<L> {
@@ -87,6 +92,8 @@ impl<L: Language> Implication<L> {
                 Condition::Term(_) => Condition::Term(from_generalized),
             },
             to: PredicateTerm::from_term(to_generalized),
+            pvec_ante_count: 0,
+            pvec_cons_count: 0,
         })
     }
 

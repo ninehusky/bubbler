@@ -222,10 +222,13 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
         let InferredFacts::Implications(mut candidates) = candidates else {
             return Err("BasicImplicationMinimize only supports implication minimization.".into());
         };
+        // Sort ascending so pop() yields the highest-scoring (most informative)
+        // implication first. More informative = weaker antecedent + stronger
+        // consequent = should be registered first to subsume weaker variants.
         candidates.sort_by(|a, b| {
             let score_a = (self.score_fn)(a);
             let score_b = (self.score_fn)(b);
-            score_b.cmp(&score_a)
+            score_a.cmp(&score_b)
         });
 
         let mut chosen: Vec<Implication<L>> = self.existing.clone();
@@ -234,7 +237,10 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
         // it would trigger an egglog "already present" panic.
         candidates.retain(|c| !chosen.contains(c));
 
-        eprintln!("[minimizer] {} candidates before minimization", candidates.len());
+        eprintln!("[minimizer] {} candidates before minimization:", candidates.len());
+        for c in &candidates {
+            eprintln!("  PRE  {}", c);
+        }
 
         for imp in candidates.iter() {
             let pre = imp.lhs_concrete();
@@ -242,6 +248,11 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
             backend.add_predicate(pre.clone(), false).unwrap();
             backend.add_predicate(post.clone(), false).unwrap();
         }
+
+        // Apply any registered rewrites to the concrete candidate terms so that
+        // e.g. commutativity (Mul a b ~> Mul b a) unifies the symmetric forms
+        // before implication minimization begins.
+        backend.run_rewrites().unwrap();
 
         // 2. Iteratively add implications and remove redundant ones.
         let mut iter = 0usize;

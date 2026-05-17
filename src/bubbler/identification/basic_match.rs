@@ -209,13 +209,15 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
                     // Skip And(P,Q)→R when all of R's pattern holes are covered
                     // by P alone or Q alone — dominated by the single-antecedent P→R
                     // or Q→R, which the minimizer would already have or will find.
+                    // PvecMatch operates on concrete terms (Term::Var, not Term::Hole),
+                    // so use .vars() not .holes() to get variable names.
                     let and_dominated = if let Term::Call(f, and_args) = &from_term.term {
                         if f.is_conjunction() && and_args.len() == 2 {
-                            let r_holes = to_term.term.holes();
-                            let p_holes = and_args[0].holes();
-                            let q_holes = and_args[1].holes();
-                            let covered_by_p = r_holes.iter().all(|h| p_holes.contains(h));
-                            let covered_by_q = r_holes.iter().all(|h| q_holes.contains(h));
+                            let r_vars = to_term.term.vars();
+                            let p_vars = and_args[0].vars();
+                            let q_vars = and_args[1].vars();
+                            let covered_by_p = r_vars.iter().all(|v| p_vars.contains(v));
+                            let covered_by_q = r_vars.iter().all(|v| q_vars.contains(v));
                             covered_by_p || covered_by_q
                         } else {
                             false
@@ -231,9 +233,11 @@ impl<L: Language> Identification<L> for PvecMatch<L> {
                     // Skip implications where the consequent introduces variables
                     // not bound by the antecedent — those are structurally
                     // unregisterable in egglog (need a universe relation).
-                    if let Ok(implication) =
+                    if let Ok(mut implication) =
                         Implication::new(from_term.clone().into(), to_term.clone())
                     {
+                        implication.pvec_ante_count = from.iter().filter(|&&b| b).count();
+                        implication.pvec_cons_count = to.iter().filter(|&&b| b).count();
                         candidates.push(implication);
                     }
                 }
@@ -465,6 +469,8 @@ pub mod cond_cvec_match_test {
                     LLVMLangOp::Neq,
                     vec![Term::Var("x".into()), Term::Var("y".into())],
                 )),
+                pvec_ante_count: 0,
+                pvec_cons_count: 0,
             })
             .unwrap();
 

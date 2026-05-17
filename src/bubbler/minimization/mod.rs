@@ -1,6 +1,6 @@
 use crate::{
     bubbler::{Condition, Implication},
-    language::{Language, Rewrite, Term},
+    language::{Language, OpTrait, Rewrite, Term},
 };
 
 mod basic_minimize;
@@ -20,6 +20,31 @@ pub mod score_fns {
 
     pub mod implication_score_fns {
         use super::*;
+
+        /// Score by PVec-based subsumption order: weak antecedent + strong consequent first.
+        /// Higher score = more general antecedent (many true slots) AND more informative
+        /// consequent (few true slots) = should be registered first so it subsumes weaker
+        /// variants. Falls back to AST size for implications without PVec counts.
+        pub fn pvec_strength<'a, L: Language>() -> Box<ImplicationScoreFn<'a, L>> {
+            Box::new(|imp: &Implication<L>| {
+                let base = if imp.pvec_ante_count > 0 || imp.pvec_cons_count > 0 {
+                    imp.pvec_ante_count as i64 - imp.pvec_cons_count as i64
+                } else {
+                    0
+                };
+                // Heavily penalize And-headed consequents (component-wise weakenings
+                // like And(P,Q)→And(P',Q)). The and-intro axiom will derive these
+                // once individual component implications are registered, so they
+                // should be processed last — they'll be pruned from candidates by
+                // the retain step before ever being popped into chosen.
+                let and_penalty: i64 = match &imp.to.term {
+                    Term::Call(op, _) if op.is_conjunction() => -1_000_000,
+                    _ => 0,
+                };
+                base + and_penalty
+            })
+        }
+
         pub fn prioritize_vars<'a, L: Language>() -> Box<ImplicationScoreFn<'a, L>> {
             fn cost<L: Language>(term: &Term<L>) -> i64 {
                 match term {
@@ -38,9 +63,7 @@ pub mod score_fns {
                     Condition::Predicate(p) => &p.term,
                     Condition::Term(t) => t,
                 };
-                let lhs_cost = cost(lhs_term);
-                let rhs_cost = cost(&imp.to.term);
-                lhs_cost + rhs_cost
+                cost(lhs_term) + cost(&imp.to.term)
             })
         }
     }
