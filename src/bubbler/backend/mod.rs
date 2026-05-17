@@ -375,6 +375,304 @@ impl<L: Language> EgglogBackend<L> {
                 },
             }])
             .unwrap();
+
+        // Or idempotency: Or(P, P) = P. Merges the e-class of Or(a, a) with a
+        // so that idempotent Or predicates don't generate spurious candidates.
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Union(
+                        span!(),
+                        call!(
+                            bubbler_defns::BASE_TERM.to_string(),
+                            vec![call!(
+                                "Or".to_string(),
+                                vec![var!("a".to_string()), var!("a".to_string())]
+                            )]
+                        ),
+                        call!(bubbler_defns::BASE_TERM.to_string(), vec![var!("a".to_string())]),
+                    )]),
+                    body: vec![GenericFact::Fact(call!(
+                        bubbler_defns::BASE_TERM.to_string(),
+                        vec![call!(
+                            "Or".to_string(),
+                            vec![var!("a".to_string()), var!("a".to_string())]
+                        )]
+                    ))],
+                    name: "or-idempotency".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
+
+        // Conjunction elimination: And(P, Q) implies P, and And(P, Q) implies Q.
+        // These are logical tautologies; registering them lets the minimizer prune
+        // any candidate of the form And(P,Q)→P or And(P,Q)→Q immediately, and
+        // transitivity then chains to prune And(P,Q)→R whenever P→R is known.
+        for (rule_name, consequent_var) in [("and-elim-left", "a"), ("and-elim-right", "b")] {
+            egraph
+                .run_program(vec![GenericCommand::Rule {
+                    rule: GenericRule {
+                        span: span!(),
+                        head: GenericActions(vec![GenericAction::Expr(
+                            span!(),
+                            call!(
+                                bubbler_defns::IMPLIES_RELATION.to_string(),
+                                vec![
+                                    call!(
+                                        bubbler_defns::BASE_TERM.to_string(),
+                                        vec![call!(
+                                            "And".to_string(),
+                                            vec![
+                                                var!("a".to_string()),
+                                                var!("b".to_string())
+                                            ]
+                                        )]
+                                    ),
+                                    call!(
+                                        bubbler_defns::BASE_TERM.to_string(),
+                                        vec![var!(consequent_var.to_string())]
+                                    ),
+                                ]
+                            ),
+                        )]),
+                        body: vec![GenericFact::Fact(call!(
+                            bubbler_defns::BASE_TERM.to_string(),
+                            vec![call!(
+                                "And".to_string(),
+                                vec![var!("a".to_string()), var!("b".to_string())]
+                            )]
+                        ))],
+                        name: rule_name.to_string(),
+                        ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                    },
+                }])
+                .unwrap();
+        }
+
+        // And-congruence (monotonicity): if P → P', then And(P,Q) → And(P',Q)
+        // and symmetrically And(P,Q) → And(P,Q').
+        // This lets the minimizer prune component-wise lattice weakenings like
+        // And(Gt a 0, X) → And(Ge a 0, X) once Gt→Ge is registered.
+        for (rule_name, (imp_lhs, imp_rhs, and_other, res_left, res_right)) in [
+            ("and-congruence-left",  ("p", "pprime", "q", "pprime", "q")),
+            ("and-congruence-right", ("q", "qprime", "p", "p",      "qprime")),
+        ] {
+            egraph
+                .run_program(vec![GenericCommand::Rule {
+                    rule: GenericRule {
+                        span: span!(),
+                        head: GenericActions(vec![GenericAction::Expr(
+                            span!(),
+                            call!(
+                                bubbler_defns::IMPLIES_RELATION.to_string(),
+                                vec![
+                                    // lhs: And(p, q)
+                                    call!(
+                                        bubbler_defns::BASE_TERM.to_string(),
+                                        vec![call!(
+                                            "And".to_string(),
+                                            vec![
+                                                var!("p".to_string()),
+                                                var!("q".to_string()),
+                                            ]
+                                        )]
+                                    ),
+                                    // rhs: And(res_left, res_right)
+                                    call!(
+                                        bubbler_defns::BASE_TERM.to_string(),
+                                        vec![call!(
+                                            "And".to_string(),
+                                            vec![
+                                                var!(res_left.to_string()),
+                                                var!(res_right.to_string()),
+                                            ]
+                                        )]
+                                    ),
+                                ]
+                            ),
+                        )]),
+                        body: vec![
+                            // implies(BaseTerm(imp_lhs), BaseTerm(imp_rhs))
+                            GenericFact::Fact(call!(
+                                bubbler_defns::IMPLIES_RELATION.to_string(),
+                                vec![
+                                    call!(
+                                        bubbler_defns::BASE_TERM.to_string(),
+                                        vec![var!(imp_lhs.to_string())]
+                                    ),
+                                    call!(
+                                        bubbler_defns::BASE_TERM.to_string(),
+                                        vec![var!(imp_rhs.to_string())]
+                                    ),
+                                ]
+                            )),
+                            // BaseTerm(And(p, q))  — ensures the And-predicate exists
+                            GenericFact::Fact(call!(
+                                bubbler_defns::BASE_TERM.to_string(),
+                                vec![call!(
+                                    "And".to_string(),
+                                    vec![
+                                        var!("p".to_string()),
+                                        var!("q".to_string()),
+                                    ]
+                                )]
+                            )),
+                        ],
+                        name: rule_name.to_string(),
+                        ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                    },
+                }])
+                .unwrap();
+            let _ = and_other; // used via the res_left/res_right tuple
+        }
+
+        // And-introduction: if A → P and A → Q, and And(P,Q) exists as a predicate,
+        // then A → And(P,Q). This subsumes the and-congruence rules: And(P,Q) → And(P',Q)
+        // follows from and-elim-left (And(P,Q)→P), P→P' (lattice), transitivity, and-elim-right,
+        // and this rule. It also handles the case where the antecedent's components weaken
+        // through the lattice e.g. And(Lt(0,a), Eq(b,0)) → And(Ge(a,0), Eq(b,0)).
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Expr(
+                        span!(),
+                        call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![
+                                var!("a".to_string()),
+                                call!(
+                                    bubbler_defns::BASE_TERM.to_string(),
+                                    vec![call!(
+                                        "And".to_string(),
+                                        vec![var!("p".to_string()), var!("q".to_string())]
+                                    )]
+                                ),
+                            ]
+                        ),
+                    )]),
+                    body: vec![
+                        GenericFact::Fact(call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![
+                                var!("a".to_string()),
+                                call!(
+                                    bubbler_defns::BASE_TERM.to_string(),
+                                    vec![var!("p".to_string())]
+                                ),
+                            ]
+                        )),
+                        GenericFact::Fact(call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![
+                                var!("a".to_string()),
+                                call!(
+                                    bubbler_defns::BASE_TERM.to_string(),
+                                    vec![var!("q".to_string())]
+                                ),
+                            ]
+                        )),
+                        GenericFact::Fact(call!(
+                            bubbler_defns::BASE_TERM.to_string(),
+                            vec![call!(
+                                "And".to_string(),
+                                vec![var!("p".to_string()), var!("q".to_string())]
+                            )]
+                        )),
+                    ],
+                    name: "and-intro".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
+
+        // Reflexivity: every predicate in the egraph implies itself.
+        // Required so And-congruence can fire when one And-component is unchanged
+        // (e.g. And(Eq a 0, Gt b 0) → And(Eq a 0, Ge b 0) needs implies(Eq a 0, Eq a 0)).
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Expr(
+                        span!(),
+                        call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![
+                                call!(bubbler_defns::BASE_TERM.to_string(), vec![var!("p".to_string())]),
+                                call!(bubbler_defns::BASE_TERM.to_string(), vec![var!("p".to_string())]),
+                            ]
+                        ),
+                    )]),
+                    body: vec![GenericFact::Fact(call!(
+                        bubbler_defns::BASE_TERM.to_string(),
+                        vec![var!("p".to_string())]
+                    ))],
+                    name: "reflexivity".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
+
+        // Antisymmetry: if A → Ge(t, u) and A → Ge(u, t), then A → Eq(t, u).
+        // Collapses paired Ge-weakening rules (e.g. → Ge(t,0) and → Ge(0,t)) into
+        // the single stronger rule → Eq(t,0). Requires the language to have Ge and Eq
+        // operators (as with LLVM sign analysis).
+        egraph
+            .run_program(vec![GenericCommand::Rule {
+                rule: GenericRule {
+                    span: span!(),
+                    head: GenericActions(vec![GenericAction::Expr(
+                        span!(),
+                        call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![
+                                var!("a".to_string()),
+                                call!(
+                                    bubbler_defns::BASE_TERM.to_string(),
+                                    vec![call!("Eq".to_string(), vec![var!("t".to_string()), var!("u".to_string())])]
+                                ),
+                            ]
+                        ),
+                    )]),
+                    body: vec![
+                        GenericFact::Fact(call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![
+                                var!("a".to_string()),
+                                call!(
+                                    bubbler_defns::BASE_TERM.to_string(),
+                                    vec![call!("Ge".to_string(), vec![var!("t".to_string()), var!("u".to_string())])]
+                                ),
+                            ]
+                        )),
+                        GenericFact::Fact(call!(
+                            bubbler_defns::IMPLIES_RELATION.to_string(),
+                            vec![
+                                var!("a".to_string()),
+                                call!(
+                                    bubbler_defns::BASE_TERM.to_string(),
+                                    vec![call!("Ge".to_string(), vec![var!("u".to_string()), var!("t".to_string())])]
+                                ),
+                            ]
+                        )),
+                    ],
+                    name: "antisymmetry".to_string(),
+                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+                },
+            }])
+            .unwrap();
+    }
+
+    /// Returns all predicates whose PVec is all-true over the current environment —
+    /// i.e., predicates that hold unconditionally for any variable assignment.
+    pub fn get_axioms(&mut self) -> Vec<PredicateTerm<L>> {
+        self.get_pvec_map()
+            .into_iter()
+            .filter(|(pvec, _)| pvec.iter().all(|&b| b))
+            .flat_map(|(_, terms)| terms)
+            .collect()
     }
 
     /// Returns a mapping from CVecs to terms in the egraph with those CVecs.
@@ -551,25 +849,68 @@ impl<L: Language> EgglogBackend<L> {
     pub fn register_implication(&mut self, implication: &Implication<L>) -> Result<(), String> {
         let lhs = &implication.from;
         let rhs = &implication.to;
+
+        // Register as a universally-quantified rule so future BaseTerm additions
+        // (via add_predicate after this call) also trigger the implication.
+        let result = self.egraph.run_program(vec![GenericCommand::Rule {
+            rule: GenericRule {
+                span: span!(),
+                head: GenericActions(vec![GenericAction::Expr(
+                    span!(),
+                    call!(
+                        bubbler_defns::IMPLIES_RELATION.to_string(),
+                        vec![lhs.clone().into(), rhs.clone().into()]
+                    ),
+                )]),
+                body: vec![GenericFact::Fact(lhs.clone().into())],
+                name: format!("{}", implication),
+                ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
+            },
+        }]);
+
+        match result {
+            Ok(_) => {}
+            Err(e) if format!("{:?}", e).contains("already present") => {}
+            Err(e) => return Err(format!("Failed to register implication: {:?}", e)),
+        }
+
+        // Also assert the concrete implies fact directly. Egglog's seminaive
+        // evaluation only fires rules on new delta facts, so if BaseTerm(lhs)
+        // was already present before the last run_implications call, the rule
+        // above will never trigger for it in subsequent calls. Asserting the
+        // fact directly puts it in the delta for the next run_implications call,
+        // allowing transitivity to chain on it immediately.
+        //
+        // Implications may be generalized (holes, e.g. Hole("?x")) or already
+        // concrete (vars, e.g. Var("x")). concretize() only handles the hole
+        // case, so fall back to the original term when it's already concrete.
+        let concrete_lhs: Expr = {
+            let concrete_term = match &implication.from {
+                Condition::Predicate(p) => p
+                    .term
+                    .concretize()
+                    .unwrap_or_else(|_| p.term.clone()),
+                Condition::Term(t) => t.concretize().unwrap_or_else(|_| t.clone()),
+            };
+            PredicateTerm::from_term(concrete_term).into()
+        };
+        let concrete_rhs: Expr = {
+            let concrete_term = implication
+                .to
+                .term
+                .concretize()
+                .unwrap_or_else(|_| implication.to.term.clone());
+            PredicateTerm::from_term(concrete_term).into()
+        };
         self.egraph
-            .run_program(vec![GenericCommand::Rule {
-                rule: GenericRule {
-                    span: span!(),
-                    head: GenericActions(vec![GenericAction::Expr(
-                        span!(),
-                        // mark the LHS and RHS as implied if...
-                        call!(
-                            bubbler_defns::IMPLIES_RELATION.to_string(),
-                            vec![lhs.clone().into(), rhs.clone().into()]
-                        ),
-                    )]),
-                    // ...we can see that the LHS is in the egraph.
-                    body: vec![GenericFact::Fact(lhs.clone().into())],
-                    name: format!("{}", implication),
-                    ruleset: bubbler_defns::PROPAGATE_ANALYSIS_RULESET.to_string(),
-                },
-            }])
-            .map_err(|e| format!("Failed to register implication: {:?}", e).to_string())?;
+            .run_program(vec![GenericCommand::Action(GenericAction::Expr(
+                span!(),
+                call!(
+                    bubbler_defns::IMPLIES_RELATION.to_string(),
+                    vec![concrete_lhs, concrete_rhs]
+                ),
+            ))])
+            .map_err(|e| format!("Failed to assert implies fact: {:?}", e))?;
 
         Ok(())
     }
@@ -687,9 +1028,8 @@ impl<L: Language> EgglogBackend<L> {
 
     pub fn run_implications(&mut self) -> Result<(), String> {
         self.egraph
-            .run_program(vec![GenericCommand::RunSchedule(GenericSchedule::Repeat(
+            .run_program(vec![GenericCommand::RunSchedule(GenericSchedule::Saturate(
                 span!(),
-                7,
                 Box::new(GenericSchedule::Run(
                     span!(),
                     GenericRunConfig {
@@ -768,6 +1108,23 @@ impl<L: Language> EgglogBackend<L> {
             Ok(_) => Ok(true),
             Err(egglog::Error::CheckError(_, _)) => Ok(false),
             Err(e) => Err(format!("Failed to check equality: {:?}", e)),
+        }
+    }
+
+    /// Print all facts currently in the `implies` relation, up to `limit`.
+    pub fn dump_implies(&mut self, limit: usize) {
+        let result = self.egraph.parse_and_run_program(
+            None,
+            &format!("(print-function {} {})", bubbler_defns::IMPLIES_RELATION, limit),
+        );
+        match result {
+            Ok(outputs) => {
+                eprintln!("[dump_implies] {} outputs:", outputs.len());
+                for o in &outputs {
+                    eprintln!("  {:?}", o);
+                }
+            }
+            Err(e) => eprintln!("[dump_implies] error: {:?}", e),
         }
     }
 

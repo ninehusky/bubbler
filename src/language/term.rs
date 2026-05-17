@@ -79,6 +79,22 @@ impl<L: Language> Term<L> {
         }
     }
 
+    pub fn holes(&self) -> Vec<String> {
+        let mut h = vec![];
+        match self {
+            Term::Hole(name) => h.push(name.clone()),
+            Term::Var(_) | Term::Const(_) => {}
+            Term::Call(_, children) => {
+                for child in children {
+                    h.extend(child.holes());
+                }
+            }
+        }
+        h.sort();
+        h.dedup();
+        h
+    }
+
     pub fn vars(&self) -> Vec<String> {
         let mut vars = vec![];
         match self {

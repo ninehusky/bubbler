@@ -12,6 +12,7 @@ pub struct LLVMLang;
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum LLVMLangOp {
     And,
+    Or,
     Add,
     Sub,
     Mul,
@@ -23,12 +24,16 @@ pub enum LLVMLangOp {
     Min,
     Max,
     Neq,
+    Eq,
+    Neg,
+    Abs,
 }
 
 impl OpTrait for LLVMLangOp {
     fn arity(&self) -> usize {
         match self {
             LLVMLangOp::And => 2,
+            LLVMLangOp::Or => 2,
             LLVMLangOp::Add => 2,
             LLVMLangOp::Sub => 2,
             LLVMLangOp::Mul => 2,
@@ -40,12 +45,16 @@ impl OpTrait for LLVMLangOp {
             LLVMLangOp::Min => 2,
             LLVMLangOp::Max => 2,
             LLVMLangOp::Neq => 2,
+            LLVMLangOp::Eq => 2,
+            LLVMLangOp::Neg => 1,
+            LLVMLangOp::Abs => 1,
         }
     }
 
     fn name(&self) -> &'static str {
         match self {
             LLVMLangOp::And => "And",
+            LLVMLangOp::Or => "Or",
             LLVMLangOp::Add => "Add",
             LLVMLangOp::Sub => "Sub",
             LLVMLangOp::Mul => "Mul",
@@ -57,7 +66,17 @@ impl OpTrait for LLVMLangOp {
             LLVMLangOp::Min => "Min",
             LLVMLangOp::Max => "Max",
             LLVMLangOp::Neq => "Neq",
+            LLVMLangOp::Eq => "Eq",
+            LLVMLangOp::Neg => "Neg",
+            LLVMLangOp::Abs => "Abs",
         }
+    }
+
+    fn is_conjunction(&self) -> bool {
+        matches!(self, LLVMLangOp::And)
+    }
+    fn is_disjunction(&self) -> bool {
+        matches!(self, LLVMLangOp::Or)
     }
 }
 
@@ -73,6 +92,7 @@ impl FromStr for LLVMLangOp {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "And" => Ok(LLVMLangOp::And),
+            "Or" => Ok(LLVMLangOp::Or),
             "Add" => Ok(LLVMLangOp::Add),
             "Sub" => Ok(LLVMLangOp::Sub),
             "Mul" => Ok(LLVMLangOp::Mul),
@@ -84,6 +104,9 @@ impl FromStr for LLVMLangOp {
             "Min" => Ok(LLVMLangOp::Min),
             "Max" => Ok(LLVMLangOp::Max),
             "Neq" => Ok(LLVMLangOp::Neq),
+            "Eq" => Ok(LLVMLangOp::Eq),
+            "Neg" => Ok(LLVMLangOp::Neg),
+            "Abs" => Ok(LLVMLangOp::Abs),
             _ => Err(format!("Unknown LLVMLangOp: {}", s)),
         }
     }
@@ -115,6 +138,7 @@ impl Language for LLVMLang {
     fn ops() -> Vec<Self::Op> {
         vec![
             LLVMLangOp::And,
+            LLVMLangOp::Or,
             LLVMLangOp::Add,
             LLVMLangOp::Sub,
             LLVMLangOp::Mul,
@@ -126,6 +150,9 @@ impl Language for LLVMLang {
             LLVMLangOp::Min,
             LLVMLangOp::Max,
             LLVMLangOp::Neq,
+            LLVMLangOp::Eq,
+            LLVMLangOp::Neg,
+            LLVMLangOp::Abs,
         ]
     }
 
@@ -142,6 +169,18 @@ impl Language for LLVMLang {
                     .zip(right_vec.iter())
                     .map(|(l, r)| match (l, r) {
                         (Some(lv), Some(rv)) => Some(((*lv != 0) && (*rv != 0)) as i64),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            LLVMLangOp::Or => {
+                let left_vec = &child_vecs[0];
+                let right_vec = &child_vecs[1];
+                left_vec
+                    .iter()
+                    .zip(right_vec.iter())
+                    .map(|(l, r)| match (l, r) {
+                        (Some(lv), Some(rv)) => Some(((*lv != 0) || (*rv != 0)) as i64),
                         _ => None,
                     })
                     .collect()
@@ -279,6 +318,26 @@ impl Language for LLVMLang {
                     })
                     .collect()
             }
+            LLVMLangOp::Eq => {
+                let left_vec = &child_vecs[0];
+                let right_vec = &child_vecs[1];
+                left_vec
+                    .iter()
+                    .zip(right_vec.iter())
+                    .map(|(l, r)| match (l, r) {
+                        (Some(lv), Some(rv)) => Some((lv == rv) as i64),
+                        _ => None,
+                    })
+                    .collect()
+            }
+            LLVMLangOp::Neg => {
+                let child_vec = &child_vecs[0];
+                child_vec.iter().map(|v| v.map(|cv| -cv)).collect()
+            }
+            LLVMLangOp::Abs => {
+                let child_vec = &child_vecs[0];
+                child_vec.iter().map(|v| v.map(|cv| cv.abs())).collect()
+            }
         }
     }
 }
@@ -287,8 +346,447 @@ impl Language for LLVMLang {
 #[allow(unused_imports)]
 mod tests {
     use super::*;
-    use crate::bubbler::{Bubbler, BubblerConfig, InferredFacts};
+    use crate::bubbler::{Bubbler, BubblerConfig, Condition, InferredFacts};
+    use crate::language::term::Term;
     use ruler::enumo::Workload;
+
+    // --- Phase 2: Axiom discovery ---
+
+    /// Discriminating test: checks both that genuine axioms are found AND
+    /// that contingent predicates are excluded.
+    #[test]
+    fn find_sign_axioms() {
+        let bubbler: Bubbler<LLVMLang> = Bubbler::new(BubblerConfig::new(vec!["x".into()], vec![]));
+
+        // Mix of axioms and non-axioms. interesting_constants includes -10, -1, 0, 1, 2, ...
+        // so all slots are exercised.
+        let wkld = Workload::new(&[
+            "(Ge (Abs x) 0)",   // axiom: abs always >= 0
+            "(Ge (Mul x x) 0)", // axiom: square always >= 0
+            "(Ge x 0)",         // NOT axiom: false at x = -1
+            "(Gt (Abs x) 0)",   // NOT axiom: false at x = 0
+        ]);
+
+        let result = bubbler.find_axioms(&wkld);
+        let InferredFacts::Axioms(axioms) = result else {
+            panic!("Expected axioms");
+        };
+
+        // to_sexp() produces "(Ge (Abs (Var x ) ) (Const 0 ) )" — match structurally.
+        let matches = |axioms: &[_], op: &str, inner: &str| -> bool {
+            axioms
+                .iter()
+                .any(|p: &crate::language::PredicateTerm<LLVMLang>| {
+                    let s = p.term.to_sexp().to_string();
+                    s.contains(op) && s.contains(inner)
+                })
+        };
+
+        assert!(
+            matches(&axioms, "Ge", "Abs"),
+            "expected (Ge (Abs x) 0) as axiom; got: {:?}",
+            axioms
+                .iter()
+                .map(|p| p.term.to_sexp().to_string())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            matches(&axioms, "Ge", "Mul"),
+            "expected (Ge (Mul x x) 0) as axiom; got: {:?}",
+            axioms
+                .iter()
+                .map(|p| p.term.to_sexp().to_string())
+                .collect::<Vec<_>>()
+        );
+
+        // Contingent predicates must not appear.
+        let contingent_present = axioms.iter().any(|p| {
+            let s = p.term.to_sexp().to_string();
+            // (Ge x 0) — no Abs or Mul, just a bare Var
+            (s.contains("Ge") && !s.contains("Abs") && !s.contains("Mul"))
+                // (Gt (Abs x) 0)
+                || (s.contains("Gt") && s.contains("Abs"))
+        });
+        assert!(
+            !contingent_present,
+            "contingent predicate found in axioms: {:?}",
+            axioms
+                .iter()
+                .map(|p| p.term.to_sexp().to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // --- Phase 3: Signedness propagation (gating experiment) ---
+    //
+    // Ground truth for recall measurement:
+    //   pos(x) ∧ pos(y) → pos(x+y)          [needs conjunction]
+    //   neg(x) ∧ neg(y) → neg(x+y)          [needs conjunction]
+    //   nonneg(x) ∧ nonneg(y) → nonneg(x+y) [needs conjunction]
+    //   zero(x) → zero(x*y)                  [single-predicate — discoverable]
+    //   pos(x) ∧ pos(y) → pos(x*y)           [needs conjunction]
+    //   neg(x) ∧ neg(y) → pos(x*y)           [needs conjunction]
+    //   pos(x) → neg(-x)                     [single-predicate — discoverable]
+    //   neg(x) → pos(-x)                     [single-predicate — discoverable]
+    //   zero(x) → zero(-x)                   [single-predicate — discoverable]
+    //   nonneg(abs(x))                        [axiom — Phase 2]
+    //
+    // The current PvecMatch only surfaces single-predicate antecedent rules.
+    // Conjunctive rules require an extended matcher. This test measures what
+    // the existing loop actually finds and is intended to document the gap.
+
+    // Schedule:
+    //   Step 1 — synthesize predicate symmetry rewrites (Gt(x,0)≡Lt(0,x), And
+    //            commutativity, etc.) so the e-graph collapses redundant forms.
+    //   Step 2 — synthesize the predicate-strength lattice (pos→nonneg etc.)
+    //            using the compressed representation.
+    //   Step 3 — discover conjunctive implications over the narrowed And workload.
+    #[test]
+    fn discover_sign_implications() {
+        let mut bubbler: Bubbler<LLVMLang> =
+            Bubbler::new(BubblerConfig::new(vec!["x".into(), "y".into()], vec![]));
+
+        let sign_ops = Workload::new(&["Gt", "Lt", "Ge", "Le", "Eq"]);
+
+        // === Step 0: Find rewrites over the term language to simplify the CVec space before finding
+        // implications.
+
+        let vars = Workload::new(&["x", "y"]);
+        let terms = Workload::new(&["(OP VAR VAR)"])
+            .plug("OP", &Workload::new(&["And", "Gt", "Lt", "Ge", "Le", "Eq"]))
+            .plug("VAR", &vars);
+
+        let (rws, _) = bubbler.find_rewrites(&terms, &Workload::empty());
+        let InferredFacts::Rewrites(rws) = rws else {
+            panic!("Expected rewrites")
+        };
+        for rw in &rws {
+            println!("=== Pre-implication rewrite: {}", rw);
+            bubbler.register_rewrite(rw).unwrap();
+        }
+
+        // === Step 1: Predicate symmetry rewrites ===
+        // Include both (SIGN VAR 0) and (SIGN 0 VAR) so find_rewrites sees that
+        // e.g. Gt(x,0) and Lt(0,x) have the same CVec → discovered as equivalent.
+        // Also include cross-variable And predicates to find commutativity.
+        let x_preds = Workload::new(&["(SIGN x 0)"]).plug("SIGN", &sign_ops);
+        let y_preds = Workload::new(&["(SIGN y 0)"]).plug("SIGN", &sign_ops);
+
+        // Signedness only: (SIGN x 0) and (SIGN 0 x) to discover the constant-flip
+        // rewrites (Gt(x,0) ↔ Lt(0,x) etc.). General order rewrites (Gt ?a ?b) ↔
+        // (Lt ?b ?a) are a separate phase outside signedness analysis.
+        let sym_atom_preds = Workload::new(&["(SIGN VAR 0)", "(SIGN 0 VAR)"])
+            .plug("SIGN", &sign_ops)
+            .plug("VAR", &Workload::new(&["x", "y"]));
+        let sym_and_preds = Workload::new(&["(And P Q)"])
+            .plug("P", &x_preds)
+            .plug("Q", &y_preds);
+        // Include (SIGN (Neg x) 0) so find_rewrites discovers Neg-flip equivalences:
+        // Gt(Neg x, 0) ↔ Lt(x, 0), Ge(Neg x, 0) ↔ Ge(0, x), Eq(Neg x, 0) ↔ Eq(x, 0).
+        let neg_preds = Workload::new(&["(SIGN (Neg x) 0)"]).plug("SIGN", &sign_ops);
+        // Include (SIGN (Abs x) 0) and (SIGN 0 (Abs x)) so find_rewrites discovers:
+        // Eq(Abs x, 0) ↔ Eq(x, 0) and Ge(0, Abs x) ↔ Eq(x, 0) (all true only at x=0).
+        // This unifies those e-classes so the four Ge-weakening Abs rules collapse to
+        // the two canonical Gt(Abs x, 0) rules.
+        let abs_preds = Workload::new(&["(SIGN (Abs x) 0)", "(SIGN 0 (Abs x))"])
+            .plug("SIGN", &sign_ops);
+        let sym_wkld = sym_atom_preds.append(sym_and_preds).append(neg_preds).append(abs_preds);
+
+        let (sym_rewrites, _) = bubbler.find_rewrites(&sym_wkld, &Workload::empty());
+        let InferredFacts::Rewrites(sym_rewrites) = sym_rewrites else {
+            panic!("Expected rewrites")
+        };
+        println!("=== Symmetry rewrites ({}) ===", sym_rewrites.len());
+        for rw in &sym_rewrites {
+            println!("  {}", rw);
+        }
+        for rw in &sym_rewrites {
+            bubbler.register_rewrite(rw).unwrap();
+        }
+
+        // === Step 1.5: Learn Add/Mul rewrite rules ===
+        // Discovers commutativity (Add a b ~> Add b a, Mul a b ~> Mul b a) so
+        // that the implication phases treat e.g. Mul(a,b) and Mul(b,a) as
+        // equivalent, collapsing duplicate implications.
+        let add_mul_wkld = Workload::new(["(OP VAR VAR)"])
+            .plug("OP", &Workload::new(&["Add", "Mul"]))
+            .plug("VAR", &Workload::new(&["x", "y"]));
+
+        let (add_mul_rws, _) = bubbler.find_rewrites(&add_mul_wkld, &Workload::empty());
+        let InferredFacts::Rewrites(add_mul_rws) = add_mul_rws else {
+            panic!("Expected rewrites")
+        };
+
+        println!("=== Add/Mul rewrites ({}) ===", add_mul_rws.len());
+        for rw in &add_mul_rws {
+            println!("  {}", rw);
+        }
+        for rw in &add_mul_rws {
+            bubbler.register_rewrite(rw).unwrap();
+        }
+
+        // === Step 2: Predicate-strength lattice (Phase 0) ===
+        // Run find_implications over single-variable predicates only; the symmetry
+        // rewrites above compress the PVec space before this runs.
+        let lattice_wkld = Workload::new(&["(SIGN VAR 0)"])
+            .plug("SIGN", &sign_ops)
+            .plug("VAR", &Workload::new(&["x", "y"]));
+
+        let lattice_imps = bubbler.find_implications(&lattice_wkld);
+        let InferredFacts::Implications(lattice_imps) = lattice_imps else {
+            panic!("Expected implications")
+        };
+        println!("=== Lattice implications ({}) ===", lattice_imps.len());
+        for imp in &lattice_imps {
+            println!("  {}", imp);
+        }
+        for imp in &lattice_imps {
+            bubbler.register_implication(imp).unwrap();
+        }
+
+        // === Step 3: Piecemeal conjunctive discovery — Add then Mul ===
+        // Running Add and Mul together bloats the candidate set. Separate passes
+        // keep each workload small and let us inspect results per-operator.
+
+        let and_preds = Workload::new(&["(And P Q)"])
+            .plug("P", &x_preds)
+            .plug("Q", &y_preds);
+        let x_or_preds = Workload::new(&[
+            "(Or (Gt x 0) (Lt x 0))",
+            "(Or (Gt x 0) (Ge x 0))",
+            "(Or (Gt x 0) (Le x 0))",
+            "(Or (Gt x 0) (Eq x 0))",
+            "(Or (Lt x 0) (Ge x 0))",
+            "(Or (Lt x 0) (Le x 0))",
+            "(Or (Lt x 0) (Eq x 0))",
+            "(Or (Ge x 0) (Le x 0))",
+            "(Or (Ge x 0) (Eq x 0))",
+            "(Or (Le x 0) (Eq x 0))",
+        ]);
+        let y_or_preds = Workload::new(&[
+            "(Or (Gt y 0) (Lt y 0))",
+            "(Or (Gt y 0) (Ge y 0))",
+            "(Or (Gt y 0) (Le y 0))",
+            "(Or (Gt y 0) (Eq y 0))",
+            "(Or (Lt y 0) (Ge y 0))",
+            "(Or (Lt y 0) (Le y 0))",
+            "(Or (Lt y 0) (Eq y 0))",
+            "(Or (Ge y 0) (Le y 0))",
+            "(Or (Ge y 0) (Eq y 0))",
+            "(Or (Le y 0) (Eq y 0))",
+        ]);
+
+        // --- 3a: Add ---
+        let add_terms = Workload::new(&["x", "y", "(Add x y)", "(Neg x)", "(Abs x)"]);
+        let add_single = Workload::new(&["(SIGN TERM 0)"])
+            .plug("SIGN", &sign_ops)
+            .plug("TERM", &add_terms);
+        let add_wkld = add_single
+            .append(and_preds.clone())
+            .append(x_or_preds.clone())
+            .append(y_or_preds.clone());
+
+        let add_result = bubbler.find_implications(&add_wkld);
+        let InferredFacts::Implications(add_imps) = add_result else {
+            panic!()
+        };
+        println!("=== Add implications ({}) ===", add_imps.len());
+        for imp in &add_imps {
+            println!("  {}", imp);
+        }
+        for imp in &add_imps {
+            bubbler.register_implication(imp).unwrap();
+        }
+
+        // --- 3b: Mul ---
+        let mul_terms = Workload::new(&["x", "y", "(Mul x y)", "(Neg x)", "(Abs x)"]);
+        let mul_single = Workload::new(&["(SIGN TERM 0)"])
+            .plug("SIGN", &sign_ops)
+            .plug("TERM", &mul_terms);
+        let mul_wkld = mul_single
+            .append(and_preds)
+            .append(x_or_preds)
+            .append(y_or_preds);
+
+        let mul_result = bubbler.find_implications(&mul_wkld);
+        let InferredFacts::Implications(mul_imps) = mul_result else {
+            panic!()
+        };
+        println!("=== Mul implications ({}) ===", mul_imps.len());
+        for imp in &mul_imps {
+            println!("  {}", imp);
+        }
+
+        let implications: Vec<_> = add_imps.iter().chain(mul_imps.iter()).cloned().collect();
+
+        // Helper: check a single-antecedent implication by outer operator.
+        let has_impl = |from_op: &LLVMLangOp, to_op: &LLVMLangOp| {
+            implications.iter().any(|imp| {
+                let Condition::Predicate(fp) = &imp.from else {
+                    return false;
+                };
+                let Term::Call(f, _) = &fp.term else {
+                    return false;
+                };
+                let Term::Call(t, _) = &imp.to.term else {
+                    return false;
+                };
+                f == from_op && t == to_op
+            })
+        };
+
+        // Helper: check a conjunctive And(sign1, sign2) → sign3 implication.
+        let has_conj_impl = |p_op: &LLVMLangOp, q_op: &LLVMLangOp, to_op: &LLVMLangOp| {
+            implications.iter().any(|imp| {
+                let Condition::Predicate(fp) = &imp.from else {
+                    return false;
+                };
+                let Term::Call(LLVMLangOp::And, args) = &fp.term else {
+                    return false;
+                };
+                if args.len() != 2 {
+                    return false;
+                }
+                let Term::Call(p, _) = &args[0] else {
+                    return false;
+                };
+                let Term::Call(q, _) = &args[1] else {
+                    return false;
+                };
+                let Term::Call(t, _) = &imp.to.term else {
+                    return false;
+                };
+                p == p_op && q == q_op && t == to_op
+            })
+        };
+
+        let dump = || {
+            implications
+                .iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+        };
+
+        // Lattice ordering: these are in lattice_imps (registered as context),
+        // NOT in the conjunctive phase output. Check lattice_imps directly.
+        // neg→nonpos appears as (Lt ?a 0) → (Ge 0 ?a) due to Le↔Ge symmetry.
+        let has_lattice_impl = |from_op: &LLVMLangOp, to_op: &LLVMLangOp| {
+            lattice_imps.iter().any(|imp| {
+                let Condition::Predicate(fp) = &imp.from else {
+                    return false;
+                };
+                let Term::Call(f, _) = &fp.term else {
+                    return false;
+                };
+                let Term::Call(t, _) = &imp.to.term else {
+                    return false;
+                };
+                f == from_op && t == to_op
+            })
+        };
+        assert!(
+            has_lattice_impl(&LLVMLangOp::Gt, &LLVMLangOp::Ge),
+            "pos → nonneg"
+        );
+        // neg → nonpos appears as (Lt ?a 0) → (Ge 0 ?a) via Le↔Ge symmetry rewrite.
+        assert!(
+            has_lattice_impl(&LLVMLangOp::Lt, &LLVMLangOp::Ge),
+            "neg → nonpos (as Ge(0,x))"
+        );
+
+        // Mul sign case-splits via Or: Gt(Mul(a,b), 0) → Or(nonzero(a/b)).
+        // The antecedent outer op is Gt or Lt; Mul is nested as the first argument.
+        // NOTE: pos(a)∧pos(b)→pos(a+b) is not yet discovered — likely a workload gap.
+        // Add(x,y) is in compound_terms but PVec for And(pos(x),pos(y))→pos(Add(x,y))
+        // may not be generated. Next thing to investigate.
+        assert!(
+            implications.iter().any(|imp| {
+                let Condition::Predicate(fp) = &imp.from else {
+                    return false;
+                };
+                let Term::Call(sign, args) = &fp.term else {
+                    return false;
+                };
+                if !matches!(sign, LLVMLangOp::Gt | LLVMLangOp::Lt) {
+                    return false;
+                }
+                if args.is_empty() {
+                    return false;
+                }
+                let is_mul_arg = matches!(&args[0], Term::Call(LLVMLangOp::Mul, _));
+                is_mul_arg && matches!(&imp.to.term, Term::Call(LLVMLangOp::Or, _))
+            }),
+            "Expected Mul-sign → Or(nonzero) rule; got: {:?}",
+            dump()
+        );
+    }
+
+    // Phase C: conditional rewrites via find_rewrites.
+    // Expected: nonneg(x) → abs(x) ≡ x  and  nonpos(x) → abs(x) ≡ -x
+    #[test]
+    fn discover_sign_conditional_rewrites() {
+        let mut bubbler: Bubbler<LLVMLang> =
+            Bubbler::new(BubblerConfig::new(vec!["x".into()], vec![]));
+
+        let term_wkld = Workload::new(&["x", "(Abs x)", "(Neg x)"]);
+        let sign_preds = Workload::new(&["(Ge x 0)", "(Gt x 0)", "(Le x 0)", "(Lt x 0)"]);
+
+        let (_, cond_rewrites) = bubbler.find_rewrites(&term_wkld, &sign_preds);
+        let InferredFacts::Rewrites(cond_rewrites) = cond_rewrites else {
+            panic!("Expected rewrites")
+        };
+
+        println!(
+            "=== Discovered conditional rewrites ({}) ===",
+            cond_rewrites.len()
+        );
+        for rw in &cond_rewrites {
+            println!("  {}", rw);
+        }
+
+        // nonneg(x) → abs(x) ≡ x
+        let has_cond_rw = |cond_op: &LLVMLangOp, lhs_op: &LLVMLangOp, rhs_is_var: bool| {
+            cond_rewrites.iter().any(|rw| {
+                let Some(cond) = rw.cond_concrete() else {
+                    return false;
+                };
+                let Term::Call(c, _) = &cond.term else {
+                    return false;
+                };
+                if c != cond_op {
+                    return false;
+                }
+                let lhs = rw.lhs_concrete();
+                let rhs = rw.rhs_concrete();
+                let lhs_ok = matches!(&lhs, Term::Call(op, _) if op == lhs_op);
+                let rhs_ok = if rhs_is_var {
+                    matches!(rhs, Term::Var(_))
+                } else {
+                    matches!(rhs, Term::Call(LLVMLangOp::Neg, _))
+                };
+                lhs_ok && rhs_ok
+            })
+        };
+
+        assert!(
+            has_cond_rw(&LLVMLangOp::Ge, &LLVMLangOp::Abs, true),
+            "Expected nonneg(x) → abs(x) ≡ x; got: {:?}",
+            cond_rewrites
+                .iter()
+                .map(|r| r.to_string())
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            has_cond_rw(&LLVMLangOp::Le, &LLVMLangOp::Abs, false),
+            "Expected nonpos(x) → abs(x) ≡ -x; got: {:?}",
+            cond_rewrites
+                .iter()
+                .map(|r| r.to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    // --- Original implication tests ---
 
     #[test]
     fn find_implications_poor_schedule() {

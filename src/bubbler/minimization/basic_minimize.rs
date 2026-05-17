@@ -222,13 +222,25 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
         let InferredFacts::Implications(mut candidates) = candidates else {
             return Err("BasicImplicationMinimize only supports implication minimization.".into());
         };
+        // Sort ascending so pop() yields the highest-scoring (most informative)
+        // implication first. More informative = weaker antecedent + stronger
+        // consequent = should be registered first to subsume weaker variants.
         candidates.sort_by(|a, b| {
             let score_a = (self.score_fn)(a);
             let score_b = (self.score_fn)(b);
-            score_b.cmp(&score_a)
+            score_a.cmp(&score_b)
         });
 
         let mut chosen: Vec<Implication<L>> = self.existing.clone();
+
+        // Drop any candidate that is already in the known-good set — re-registering
+        // it would trigger an egglog "already present" panic.
+        candidates.retain(|c| !chosen.contains(c));
+
+        eprintln!("[minimizer] {} candidates before minimization:", candidates.len());
+        for c in &candidates {
+            eprintln!("  PRE  {}", c);
+        }
 
         for imp in candidates.iter() {
             let pre = imp.lhs_concrete();
@@ -237,20 +249,38 @@ impl<'a, L: Language> Minimization<L> for BasicImplicationMinimize<'a, L> {
             backend.add_predicate(post.clone(), false).unwrap();
         }
 
+        // Apply any registered rewrites to the concrete candidate terms so that
+        // e.g. commutativity (Mul a b ~> Mul b a) unifies the symmetric forms
+        // before implication minimization begins.
+        backend.run_rewrites().unwrap();
+
         // 2. Iteratively add implications and remove redundant ones.
+        let mut iter = 0usize;
         while let Some(selected) = candidates.pop() {
+            iter += 1;
+            eprintln!("[minimizer] iter {iter}: registering: {selected}  ({} remaining)", candidates.len());
             chosen.push(selected.clone());
+
+            eprintln!("[minimizer]   register_implication...");
             backend.register_implication(&selected).unwrap();
 
+            eprintln!("[minimizer]   run_implications...");
             backend.run_implications().unwrap();
 
-            // Remove redundant candidates.
+            if iter <= 2 {
+                eprintln!("[minimizer]   implies relation after iter {iter}:");
+                backend.dump_implies(30);
+            }
+
+            eprintln!("[minimizer]   pruning...");
+            let before = candidates.len();
             candidates.retain(|imp| {
                 let pre = imp.lhs_concrete();
                 let post = imp.rhs_concrete();
 
                 !backend.is_implied(&pre, &post).unwrap()
             });
+            eprintln!("[minimizer]   pruned {} → {} candidates", before, candidates.len());
         }
 
         // 3. Only add the new rules.

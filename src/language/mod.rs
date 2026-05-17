@@ -26,6 +26,12 @@ pub trait OpTrait: Clone + Debug + PartialEq + Eq {
     fn arity(&self) -> usize;
 
     fn name(&self) -> &'static str;
+
+    /// True if this operator is logical conjunction (AND) over predicate arguments.
+    fn is_conjunction(&self) -> bool { false }
+
+    /// True if this operator is logical disjunction (OR) over predicate arguments.
+    fn is_disjunction(&self) -> bool { false }
 }
 
 pub trait Language: Clone + Debug + PartialEq + Eq {
