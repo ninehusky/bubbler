@@ -34,3 +34,5 @@ Cargo.lock
 **/*.dot
 
 artifacts/*
+
+CLAUDE.md
