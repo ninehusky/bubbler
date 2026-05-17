@@ -46,3 +46,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run tests (release mode)
         run: cargo test --release --all-features
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build Docker image
+        run: docker build .
