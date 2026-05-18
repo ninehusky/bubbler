@@ -78,12 +78,13 @@ pub mod tests {
     use crate::{
         bubbler::backend::{
             EgglogBackend,
+            lowering::EgglogLowering,
             colors::{
                 Lattice,
                 context::{clear_lattice, set_lattice},
             },
         },
-        language::{Language, Term},
+        language::{Language, PredicateTerm, Term},
         test_langs::llvm::{LLVMLang, LLVMLangOp},
     };
 
@@ -109,21 +110,38 @@ pub mod tests {
 
         backend.add_term(term, false).unwrap();
 
-        let result = backend.egraph.parse_and_run_program(
-            None,
-            // the BaseTerm (Var "true") is just a placeholder for the color stuff.
-            // in a separate PR, we'll actually look up the color e-class.
-            r#"(colored-find (BaseTerm (Var "true")) (Add (Var "x") (Var "y")))"#,
-        );
-
-        let msgs = backend
-            .egraph
-            .parse_and_run_program(None, r#"(extract (Add (Var "x") (Var "y")))"#)
+        let result = EgglogLowering::new(&mut backend.egraph)
+            .user_defined(
+                "colored-find",
+                vec![
+                    PredicateTerm::<LLVMLang>::from_term(Term::<LLVMLang>::Var("true".into()))
+                        .into(),
+                    Term::<LLVMLang>::Call(
+                        LLVMLangOp::Add,
+                        vec![
+                            Term::<LLVMLang>::Var("x".into()),
+                            Term::<LLVMLang>::Var("y".into()),
+                        ],
+                    )
+                    .into(),
+                ],
+            )
             .unwrap();
 
-        assert_eq!(msgs.len(), 1);
+        let msg = EgglogLowering::new(&mut backend.egraph)
+            .extract_best(
+                Term::<LLVMLang>::Call(
+                    LLVMLangOp::Add,
+                    vec![
+                        Term::<LLVMLang>::Var("x".into()),
+                        Term::<LLVMLang>::Var("y".into()),
+                    ],
+                )
+                .into(),
+            )
+            .unwrap();
 
-        let val = match &msgs[0] {
+        let val = match &msg {
             egglog::CommandOutput::ExtractBest(termdag, _, term) => {
                 let expr = termdag.term_to_expr(term, span!());
                 backend.egraph.eval_expr(&expr).unwrap().1
@@ -134,7 +152,7 @@ pub mod tests {
         let sort = backend.egraph.get_sort_by_name(LLVMLang::name()).unwrap();
         let id = backend.egraph.get_canonical_value(val, sort);
 
-        assert!(result.is_ok(), "colored-find command failed: {:?}", result);
+        assert_eq!(result.len(), 1);
         assert_eq!(id, val);
 
         clear_lattice();
