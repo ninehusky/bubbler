@@ -31,6 +31,10 @@ thread_local! {
     static CURRENT_LATTICE: RefCell<Option<*const ()>> = const { RefCell::new(None) };
 }
 
+pub fn lattice_is_set() -> bool {
+    CURRENT_LATTICE.with(|slot| slot.borrow().is_some())
+}
+
 /// Set the lattice for the current backend.
 ///
 /// # Panics
@@ -63,13 +67,13 @@ pub fn clear_lattice() {
 /// # Safety
 /// This is safe because of the invariants on `CURRENT_LATTICE`.
 #[allow(dead_code)]
-pub fn with_lattice<L: Language, R, F: FnOnce(&Lattice<L>) -> R>(f: F) -> R {
+pub fn with_lattice<L: Language, R, F: FnOnce(&mut Lattice<L>) -> R>(f: F) -> R {
     CURRENT_LATTICE.with(|slot| {
         let slot = slot.borrow();
         let ptr = slot.expect("Why is there no lattice set for this thread?");
 
         // SAFETY: See the safety comment on CURRENT_LATTICE.
-        let lattice: &Lattice<L> = unsafe { &*(ptr as *const Lattice<L>) };
+        let lattice: &mut Lattice<L> = unsafe { &mut *(ptr as *mut Lattice<L>) };
 
         f(lattice)
     })

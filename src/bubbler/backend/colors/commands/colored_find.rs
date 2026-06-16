@@ -1,12 +1,12 @@
-use std::{fmt::Display, sync::Arc};
+use std::{any::Any, fmt::Display, str::FromStr, sync::Arc};
 
-use egglog::{CommandOutput, UserDefinedCommand};
+use egglog::{CommandOutput, UserDefinedCommand, Value, sort::S};
 
 use crate::{
     bubbler::backend::{
         EgglogBackend, colors::context::with_lattice, enodes::EClassId, uf::UFContext,
     },
-    language::{Language, PredicateTerm},
+    language::{Language, PredicateTerm, Term},
 };
 
 /// `(colored-find c t)`
@@ -31,22 +31,21 @@ impl<L: Language> UserDefinedCommand for ColoredFind<L> {
     ) -> Result<Option<egglog::CommandOutput>, egglog::Error> {
         assert_eq!(args.len(), 2, "colored_find takes 2 arguments");
         let color: PredicateTerm<L> = args[0].clone().into();
-        println!("debug: we're going to just assume the color is black.");
-        let black_id = EgglogBackend::get_eclass_id(egraph, &color.term).unwrap();
+        let term: Term<L> = args[1].clone().into();
+        let black_id = EgglogBackend::get_eclass_id(egraph, &term).unwrap();
 
         let rep = with_lattice::<L, _, _>(|lattice| {
-            let uf = lattice
-                .ufs
-                .get(&lattice.top())
-                .expect("Hey... where's the top UF?");
-
-            let sort = egraph.get_sort_by_name(L::name()).unwrap();
-            uf.peek(UFContext::EGraph { egraph, sort }, black_id.0)
+            let color_id = if color.is_true(egraph) {
+                lattice.top
+            } else {
+                lattice.fact_node(color)
+            };
+            let canon_id =
+                egraph.get_canonical_value(black_id.0, egraph.get_sort_by_name(L::name()).unwrap());
+            lattice.colored_find(egraph, color_id, EClassId(canon_id))
         });
 
-        let output = ColoredFindOutput {
-            value: EClassId(rep),
-        };
+        let output = ColoredFindOutput { value: rep };
 
         Ok(Some(CommandOutput::UserDefined(Arc::new(output))))
     }
@@ -60,15 +59,37 @@ pub struct ColoredFindOutput {
 
 impl Display for ColoredFindOutput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ColoredFindOutput({:?})", self.value)
+        write!(f, "{:?}", self.value)
+    }
+}
+
+impl FromStr for ColoredFindOutput {
+    type Err = egglog::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // it should look like EClassId(Value(`actual_value`))
+        let s = s.trim();
+        if !s.starts_with("EClassId(Value(") || !s.ends_with("))") {
+            return Err(egglog::Error::BackendError(format!(
+                "Invalid ColoredFindOutput string: {}",
+                s
+            )));
+        }
+
+        let inner = &s["EClassId(Value(".len()..s.len() - 2];
+        let value: egglog::Value = Value::new_const(inner.parse::<u32>().unwrap());
+        Ok(ColoredFindOutput {
+            value: EClassId(value),
+        })
     }
 }
 
 #[cfg(test)]
 pub mod tests {
-    use std::sync::Arc;
+    use std::{str::FromStr, sync::Arc};
 
     use egglog::{
+        CommandOutput,
         prelude::{RustSpan, Span},
         span,
     };
@@ -80,6 +101,7 @@ pub mod tests {
             EgglogBackend,
             colors::{
                 Lattice,
+                commands::colored_find::ColoredFindOutput,
                 context::{clear_lattice, set_lattice},
             },
         },
@@ -109,12 +131,25 @@ pub mod tests {
 
         backend.add_term(term, false).unwrap();
 
-        let result = backend.egraph.parse_and_run_program(
-            None,
-            // the BaseTerm (Var "true") is just a placeholder for the color stuff.
-            // in a separate PR, we'll actually look up the color e-class.
-            r#"(colored-find (BaseTerm (Var "true")) (Add (Var "x") (Var "y")))"#,
-        );
+        let result = backend
+            .egraph
+            .parse_and_run_program(
+                None,
+                // the BaseTerm (Var "true") is just a placeholder for the color stuff.
+                // in a separate PR, we'll actually look up the color e-class.
+                r#"(colored-find (BaseTerm (Var "true")) (Add (Var "x") (Var "y")))"#,
+            )
+            .expect("Failed to run colored-find command");
+
+        assert_eq!(result.len(), 1);
+
+        let result_val = match &result[0] {
+            CommandOutput::UserDefined(output) => {
+                let as_str = format!("{}", output);
+                ColoredFindOutput::from_str(&as_str).unwrap().value
+            }
+            _ => panic!("Expected ColoredFindOutput"),
+        };
 
         let msgs = backend
             .egraph
@@ -134,8 +169,7 @@ pub mod tests {
         let sort = backend.egraph.get_sort_by_name(LLVMLang::name()).unwrap();
         let id = backend.egraph.get_canonical_value(val, sort);
 
-        assert!(result.is_ok(), "colored-find command failed: {:?}", result);
-        assert_eq!(id, val);
+        assert_eq!(id, result_val.0);
 
         clear_lattice();
     }
